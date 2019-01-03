@@ -144,18 +144,12 @@ class ReplayBuffer(object):
         Parameters
         ----------
         frame: np.array
-            Array of shape (img_h, img_w, img_c) and dtype np.uint8
-            and the frame will transpose to shape (img_h, img_w, img_c) to be stored
+            Array of shape (img_c, img_h, img_w) and dtype np.uint8
         Returns
         -------
         idx: int
             Index at which the frame is stored. To be used for `store_effect` later.
         """
-        # make sure we are not using low-dimensional observations, such as RAM
-        if len(frame.shape) > 1:
-            # transpose image frame into (img_c, img_h, img_w)
-            frame = frame.transpose(2, 0, 1)
-
         if self.obs is None:
             self._init_replay_data(frame.shape)
 
@@ -187,6 +181,31 @@ class ReplayBuffer(object):
         self.reward[idx] = reward
         self.done[idx]   = done
 
+    def env_reset(self):
+        """
+        Allow environment resets for the most recent transition after it has
+        been stored. This is useful when loading a saved replay buffer.
+        """
+        if self.num_in_buffer > 0:
+            self.done[(self.next_idx-1) % self.size] = True
+
+    def state_dict(self):
+        return {
+            'obs': self.obs,
+            'action': self.action,
+            'reward': self.reward,
+            'done': self.done,
+            'num_in_buffer': self.num_in_buffer,
+            'next_idx': self.next_idx,
+        }
+
+    def load_state_dict(self, state_dict):
+        self.obs = state_dict['obs']
+        self.action = state_dict['action']
+        self.reward = state_dict['reward']
+        self.done = state_dict['done']
+        self.num_in_buffer = state_dict['num_in_buffer']
+        self.next_idx = state_dict['next_idx']
 
 
 
@@ -227,6 +246,35 @@ class TestBuffer(unittest.TestCase):
         # Check for wrap around when buffer is full
         s = buffer._encode_sample([0])
         assert not np.allclose(s[0][0][:-3], 0)
+
+        #Check env reset
+        buffer.env_reset()
+        assert buffer.done[buffer.next_idx - 1 % buffer.size] == True
+
+        # Check saving and loading
+        state = buffer.state_dict()
+        buffer2 = ReplayBuffer(10, 4)
+        buffer2.load_state_dict(state)
+
+        s1 = buffer._encode_sample([1,3,5])
+        s2 = buffer2._encode_sample([1,3,5])
+        for i,x in enumerate(s1):
+            assert np.allclose(x, s2[i])
+
+
+        for i in range(10):
+            ac = env.action_space.sample()
+            obs, r, done, _ = env.step(ac)
+            buffer.store_effect(idx, ac, r, done)
+            buffer2.store_effect(idx, ac, r, done)
+            idx = buffer.store_frame(obs)
+            idx2 = buffer2.store_frame(obs)
+            assert idx == idx2
+
+        s1 = buffer._encode_sample([1,3,5])
+        s2 = buffer2._encode_sample([1,3,5])
+        for i,x in enumerate(s1):
+            assert np.allclose(x, s2[i])
 
 
 

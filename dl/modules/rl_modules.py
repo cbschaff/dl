@@ -214,7 +214,7 @@ class NatureDQN(nn.Module):
         self.fc = nn.Linear(self.nunits, 512)
 
     def forward(self, x):
-        x = x.float()
+        x = x.float() / 255.
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))

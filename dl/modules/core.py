@@ -12,13 +12,15 @@ class FeedForwardNet(nn.Module):
         Example:
             net = FeedForwardNet(16, [32,32,1])
         Args:
-            in_shape    (int): number of channels of the input to the network.
-            units      (list): The number of units in each layer. The length of
-                               the list denotes the number of layers.
-            activation_fn (callable): The activation function to apply after
-                               each layer.
-            activate_last (bool): Whether or not to apply activation_fn to the
-                               output of the last layer.
+            in_shape (int):
+                number of channels of the input to the network.
+            units (list):
+                The number of units in each layer. The length of the list
+                denotes the number of layers.
+            activation_fn (callable):
+                The activation function to apply after each layer.
+            activate_last (bool):
+                Whether or not to apply activation_fn to the output of the last layer.
         """
 
         super().__init__()
@@ -46,15 +48,18 @@ class Conv2dNet(nn.Module):
         Example:
             net = Conv2dNet(3, [(16,3), (32,3,2), (64,3,1,1)])
         Args:
-            in_channels (int): number of channels of the input to the network.
-            convs      (list): Describes the conv layers. Each element of the
-                               list should contain the args for torch.nn.Conv2d
-                               in order. At minimum, the first two args must be
-                               specified (out_channels and kernel_size).
-            activation_fn (callable): The activation function to apply after
+            in_channels (int):
+                number of channels of the input to the network.
+            convs      (list):
+                Describes the conv layers. Each element of the
+                list should contain the args for torch.nn.Conv2d
+                in order. At minimum, the first two args must be
+                specified (out_channels and kernel_size).
+            activation_fn (callable):
+                The activation function to apply after
                                each layer.
-            activate_last (bool): Whether or not to apply activation_fn to the
-                               output of the last layer.
+            activate_last (bool):
+                Whether or not to apply activation_fn to the output of the last layer.
         """
         super().__init__()
         ci = in_channels
@@ -69,7 +74,6 @@ class Conv2dNet(nn.Module):
         for i in range(self.nlayers-1):
             x = self.activation_fn(getattr(self, f'conv2d{i}')(x))
         x = getattr(self, f'conv2d{self.nlayers-1}')(x)
-        print(x.shape)
         if self.activate_last:
             return self.activation_fn(x)
         return x

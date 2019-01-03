@@ -29,6 +29,8 @@ class PrioritizedReplayBuffer(object):
         assert alpha >= 0
         self._alpha = alpha
         self.buffer = buffer
+        self.size = self.buffer.size
+        self.num_in_buffer = self.buffer.num_in_buffer
 
         it_capacity = 1
         while it_capacity < buffer.size:
@@ -92,7 +94,7 @@ class PrioritizedReplayBuffer(object):
             p_sample = self._it_sum[idx] / self._it_sum.sum()
             weight = (p_sample * self.buffer.num_in_buffer) ** (-beta)
             weights.append(weight / max_weight)
-        weights = np.array(weights)
+        weights = np.array(weights, dtype=np.float32)
         encoded_sample = self.buffer._encode_sample(idxes)
         return tuple(list(encoded_sample) + [weights, idxes])
 
@@ -103,6 +105,7 @@ class PrioritizedReplayBuffer(object):
         idx = self.buffer.store_frame(frame)
         self._it_sum[idx] = self._max_priority ** self._alpha
         self._it_min[idx] = self._max_priority ** self._alpha
+        self.num_in_buffer = self.buffer.num_in_buffer
         return idx
 
     def store_effect(self, *args, **kwargs):
@@ -131,6 +134,21 @@ class PrioritizedReplayBuffer(object):
 
             self._max_priority = max(self._max_priority, priority)
 
+    def env_reset(self):
+        self.buffer.env_reset()
+
+    def state_dict(self):
+        state = self.buffer.state_dict()
+        state['_max_priority'] = self._max_priority
+        state['_it_sum'] = self._it_sum
+        state['_it_min'] = self._it_min
+        return state
+
+    def load_state_dict(self, state_dict):
+        self.buffer.load_state_dict(state_dict)
+        self._max_priority = state_dict['_max_priority']
+        self._it_sum = state_dict['_it_sum']
+        self._it_min = state_dict['_it_min']
 
 
 
@@ -181,6 +199,40 @@ class TestPrioritizedBuffer(unittest.TestCase):
         # Check for wrap around when buffer is full
         s = buffer._encode_sample([0])
         assert not np.allclose(s[0][0][:-3], 0)
+
+        # Check saving and loading
+        state = buffer.state_dict()
+        buffer2 = ReplayBuffer(10, 4)
+        buffer2 = PrioritizedReplayBuffer(buffer2, alpha=0.5)
+        buffer2.load_state_dict(state)
+
+        s1 = buffer._encode_sample([1,3,5])
+        s2 = buffer2._encode_sample([1,3,5])
+        for i,x in enumerate(s1):
+            assert np.allclose(x, s2[i])
+
+
+        for i in range(10):
+            ac = env.action_space.sample()
+            obs, r, done, _ = env.step(ac)
+            buffer.store_effect(idx, ac, r, done)
+            buffer2.store_effect(idx, ac, r, done)
+            idx = buffer.store_frame(obs)
+            idx2 = buffer2.store_frame(obs)
+            assert idx == idx2
+            assert buffer._max_priority == buffer2._max_priority
+
+        s1 = buffer._encode_sample([1,3,5])
+        s2 = buffer2._encode_sample([1,3,5])
+        for i,x in enumerate(s1):
+            assert np.allclose(x, s2[i])
+
+        buffer.update_priorities([4,5],[0.1,0.9])
+        buffer2.update_priorities([4,5],[0.1,0.9])
+        assert buffer._max_priority == buffer2._max_priority
+        assert buffer._it_sum[4] == buffer2._it_sum[4]
+        assert buffer._it_sum[5] == buffer2._it_sum[5]
+
 
 
 

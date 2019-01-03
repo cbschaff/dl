@@ -1,4 +1,0 @@
-Logging to logs
-hi1
-Logging to logs
-hi2
