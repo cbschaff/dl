@@ -76,6 +76,10 @@ class Trainer(object):
                 last_eval = self.t
         if self.t not in self.ckptr.ckpts():
             self.save()
+        self.close()
+
+    def close(self):
+        pass
 
 
 

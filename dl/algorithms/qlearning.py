@@ -236,6 +236,11 @@ class QLearning(Trainer):
         with open(os.path.join(self.logdir, f'eval/{self.t}.json'), 'w') as f:
             json.dump(outs, f)
 
+    def close(self):
+        if hasattr(self.env, 'close'):
+            self.env.close()
+        logger.reset()
+
 
 import unittest, shutil
 from dl.util import atari_env, load_gin_configs
@@ -245,6 +250,8 @@ class TestQLearning(unittest.TestCase):
         env = atari_env('Pong')
         ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
         ql.train()
+        env = atari_env('Pong')
+        ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
         ql.train() # loads checkpoint
         assert ql.buffer.num_in_buffer == 1000
         shutil.rmtree('logs')
