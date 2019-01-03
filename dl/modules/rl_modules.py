@@ -73,14 +73,14 @@ class QFunction(nn.Module):
             self.base = get_default_base(obs_shape)
         self.action_space = action_space
         assert self.action_space.__class__.__name__ == 'Discrete'
-        self.qvals = None
-        self.outputs = namedtuple('Outputs', ['action', 'max_q', 'qvals'])
+        with torch.no_grad():
+            in_shape = self.base(torch.zeros(obs_shape)[None]).shape[-1]
 
-    def _init_qvals(self, in_shape):
         self.qvals = nn.Linear(in_shape, self.action_space.n)
         nn.init.orthogonal_(self.qvals.weight.data, gain=1.0)
         nn.init.constant_(self.qvals.bias.data, 0)
-        self.qvals.to(next(self.base.parameters()).device)
+
+        self.outputs = namedtuple('Outputs', ['action', 'max_q', 'qvals'])
 
     def forward(self, x):
         """
@@ -94,9 +94,6 @@ class QFunction(nn.Module):
                 out.qvals:  The Q-value for each action
         """
         x = self.base(x)
-        if self.qvals is None:
-            assert len(x.shape) == 2, 'Output of base should be a feature vector for each input.'
-            self._init_qvals(x.shape[-1])
         qvals = self.qvals(x)
         max_q, action = qvals.max(dim=-1)
         return self.outputs(action=action, max_q=max_q, qvals=qvals)
@@ -126,11 +123,10 @@ class Policy(nn.Module):
         else:
             self.critic_base = None
         self.action_space = action_space
-        self.dist = None
-        self.vf = None
-        self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'dist', 'state_out'])
+        with torch.no_grad():
+            in_shape = self.base(torch.zeros(obs_shape)[None]).shape[-1]
 
-    def _init_dist(self, in_shape):
+        # init distribution
         if self.action_space.__class__.__name__ == 'Discrete':
             self.dist = Categorical(in_shape, self.action_space.n)
         elif self.action_space.__class__.__name__ == 'Box':
@@ -140,12 +136,14 @@ class Policy(nn.Module):
         # Assume all parameters are on the same device
         self.dist.to(next(self.base.parameters()).device)
 
-    def _init_vf(self, in_shape):
+        # init value function haed
         self.vf = nn.Linear(in_shape, 1)
         if self.critic_base:
             self.vf.to(next(self.critic_base.parameters()).device)
         else:
             self.vf.to(next(self.base.parameters()).device)
+
+        self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'dist', 'state_out'])
 
     def _run_bases(self, x, mask, state_in):
         if state_in is None:
@@ -175,14 +173,6 @@ class Policy(nn.Module):
                 out.state_out:  The temporal state of base (See above for details)
         """
         out, vf_out, state_out = self._run_bases(X, mask, state_in)
-
-        if self.dist is None:
-            assert len(out.shape) == 2, 'Output of base should be a feature vector for each input.'
-            self._init_dist(out.shape[-1])
-
-        if self.vf is None:
-            assert len(out.shape) == 2, 'Output of base should be a feature vector for each input.'
-            self._init_vf(out.shape[-1])
 
         dist = self.dist(out)
         if deterministic:
