@@ -117,7 +117,7 @@ class QLearning(Trainer):
             x = self.buffer.encode_recent_observation()
             with torch.no_grad():
                 x = torch.from_numpy(x).to(self.device)
-                ac = self.net(x[None]).action
+                ac = self.net(x[None]).action.cpu().numpy()
         self._ob, r, done, _ = self.env.step(ac)
         self.buffer.store_effect(idx, ac, r, done)
         if done:
@@ -141,7 +141,7 @@ class QLearning(Trainer):
             else:
                 qtarg = self.target_net(next_ob).max_q
             assert rew.shape == qtarg.shape
-            target = rew + self.gamma * qtarg
+            target = rew + (1.0 - done) * self.gamma * qtarg
 
         assert target.shape == q.shape
         err = self.criterion(target, q)
