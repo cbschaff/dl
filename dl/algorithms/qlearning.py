@@ -147,7 +147,7 @@ class QLearning(Trainer):
         err = self.criterion(target, q)
 
         if self.prioritized_replay:
-            self.buffer.update_priorities(idx, err.detach().numpy())
+            self.buffer.update_priorities(idx, err.detach().cpu().numpy())
 
         if self.prioritized_replay:
             assert err.shape == weight.shape
@@ -176,7 +176,7 @@ class QLearning(Trainer):
 
         if self.t % self.log_period == 0 and self.t > 0:
             with torch.no_grad():
-                meanloss = (sum(self.losses) / self.log_period).numpy()
+                meanloss = (sum(self.losses) / self.log_period).cpu().numpy()
             logger.log("========================|  Timestep: {}  |========================".format(self.t))
             # Logging stats...
             logger.logkv('Loss', meanloss)
