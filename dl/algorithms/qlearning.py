@@ -1,8 +1,9 @@
 from dl import Trainer
 from dl.modules import QFunction
 from dl.util import ReplayBuffer, PrioritizedReplayBuffer, Checkpointer
+from dl.util import logger, find_monitor
 from baselines.common.schedules import LinearSchedule
-import gin, os
+import gin, os, time
 import torch
 import numpy as np
 from collections import deque
@@ -33,6 +34,7 @@ class QLearning(Trainer):
                  replay_beta=0.4,
                  t_beta_max=int(1e7),
                  gpu=True,
+                 log_period=1000,
                  trainer_kwargs={}
                  ):
         super().__init__(logdir, **trainer_kwargs)
@@ -45,6 +47,7 @@ class QLearning(Trainer):
         self.target_update_period = target_update_period
         self.double_dqn = double_dqn
         self.eval_eps = eval_eps
+        self.log_period = log_period
         self.prioritized_replay = prioritized_replay
         self.buffer = buffer(buffer_size, frame_stack)
         if prioritized_replay:
@@ -65,7 +68,9 @@ class QLearning(Trainer):
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
         else:
             self.criterion = torch.nn.MSELoss(reduction='none')
-        self.t = 0
+        self.t, self.t_start = 0,0
+        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
+        self.losses = []
 
         self._reset()
 
@@ -102,6 +107,7 @@ class QLearning(Trainer):
         state = self.ckptr.load(t)
         state['buffer'] = np.load(os.path.join(self.ckptr.ckptdir, 'buffer.npz'))
         self.load_state_dict(state)
+        self.t_start = 0 if t is None else t
 
     def act(self):
         idx = self.buffer.store_frame(self._ob)
@@ -153,7 +159,7 @@ class QLearning(Trainer):
         while self.buffer.num_in_buffer < min(self.learning_starts, self.buffer.size):
             self.act()
         if self.t % self.target_update_period == 0:
-            self.target_net.load_state_dict(self.net.state_dict)
+            self.target_net.load_state_dict(self.net.state_dict())
 
         if self.t % self.update_period == 0:
             if self.prioritized_replay:
@@ -165,6 +171,25 @@ class QLearning(Trainer):
             loss = self.loss(batch)
             loss.backward()
             self.opt.step()
+
+            self.losses.append(loss.detach())
+
+        if self.t % self.log_period == 0 and self.t > 0:
+            with torch.no_grad():
+                meanloss = (sum(self.losses) / self.log_period).numpy()
+            logger.log("========================|  Timestep: {}  |========================".format(self.t))
+            # Logging stats...
+            logger.logkv('Loss', meanloss)
+            logger.logkv('timesteps', self.t)
+            logger.logkv('fps', int((self.t - self.t_start) / (time.time() - self.time_start)))
+            logger.logkv('time_elapsed', time.time() - self.time_start)
+            logger.logkv('time spent exploring', self.eps_schedule.value(self.t))
+
+            monitor = find_monitor(self.env)
+            if monitor is not None:
+                logger.logkv('mean episode length', np.mean(monitor.episode_lengths[-100:]))
+                logger.logkv('mean episode reward', np.mean(monitor.episode_rewards[-100:]))
+            logger.dumpkvs()
 
     def evaluate(self):
         import json

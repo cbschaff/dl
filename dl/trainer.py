@@ -52,7 +52,7 @@ class Trainer(object):
         self.load_state_dict(self.ckptr.load(t))
 
     def train(self):
-        time_start = time.time()
+        self.time_start = time.time()
         if len(self.ckptr.ckpts()) > 0:
             self.load()
         if self.maxt and self.t > self.maxt:
@@ -65,7 +65,7 @@ class Trainer(object):
         while True:
             if self.maxt and self.t >= self.maxt:
                 break
-            if self.maxseconds and time.time() - time_start >= self.maxseconds:
+            if self.maxseconds and time.time() - self.time_start >= self.maxseconds:
                 break
             self.step()
             if self.save_period and (self.t - last_save) >= self.save_period:
