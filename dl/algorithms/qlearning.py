@@ -147,7 +147,7 @@ class QLearning(Trainer):
         err = self.criterion(target, q)
 
         if self.prioritized_replay:
-            self.buffer.update_priorities(idx, err.detach().cpu().numpy())
+            self.buffer.update_priorities(idx, err.detach().cpu().numpy() + 1e-6)
             assert err.shape == weight.shape
             err = weight * err
         return err.mean()
