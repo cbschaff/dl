@@ -80,7 +80,7 @@ class QFunction(nn.Module):
         nn.init.orthogonal_(self.qvals.weight.data, gain=1.0)
         nn.init.constant_(self.qvals.bias.data, 0)
 
-        self.outputs = namedtuple('Outputs', ['action', 'max_q', 'qvals'])
+        self.outputs = namedtuple('Outputs', ['action', 'maxq', 'qvals'])
 
     def forward(self, x):
         """
@@ -90,13 +90,13 @@ class QFunction(nn.Module):
         Returns:
             out (namedtuple):
                 out.action: The action corresponding to the argmax of the Q-values
-                out.max_q:  The max of the Q-values
+                out.maxq:  The max of the Q-values
                 out.qvals:  The Q-value for each action
         """
         x = self.base(x)
         qvals = self.qvals(x)
-        max_q, action = qvals.max(dim=-1)
-        return self.outputs(action=action, max_q=max_q, qvals=qvals)
+        maxq, action = qvals.max(dim=-1)
+        return self.outputs(action=action, maxq=maxq, qvals=qvals)
 
 
 
@@ -132,16 +132,13 @@ class Policy(nn.Module):
         elif self.action_space.__class__.__name__ == 'Box':
             self.dist = DiagGaussian(in_shape, self.action_space.n)
         else:
-            assert False, "Uknown action space {self.action_space.__class__.__name__}"
-        # Assume all parameters are on the same device
-        self.dist.to(next(self.base.parameters()).device)
+            assert False, f"Uknown action space {self.action_space.__class__.__name__}"
 
         # init value function haed
+        if critic_base:
+            with torch.no_grad():
+                in_shape = self.critic_base(torch.zeros(obs_shape)[None]).shape[-1]
         self.vf = nn.Linear(in_shape, 1)
-        if self.critic_base:
-            self.vf.to(next(self.critic_base.parameters()).device)
-        else:
-            self.vf.to(next(self.base.parameters()).device)
 
         self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'dist', 'state_out'])
 
@@ -231,7 +228,7 @@ class TestRLModules(unittest.TestCase):
         for _ in range(10):
             outs = net(torch.from_numpy(ob[None]))
             assert outs.action.shape == (1,)
-            assert outs.max_q.shape == (1,)
+            assert outs.maxq.shape == (1,)
             assert outs.qvals.shape == (1,env.action_space.n)
             ob, r, done, _ = env.step(outs.action[0])
 

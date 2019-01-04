@@ -139,7 +139,7 @@ class QLearning(Trainer):
                 qtargs = self.target_net(next_ob).qvals
                 qtarg = qtargs.gather(next_ac.long().unsqueeeze(1)).squeeze(1)
             else:
-                qtarg = self.target_net(next_ob).max_q
+                qtarg = self.target_net(next_ob).maxq
             assert rew.shape == qtarg.shape
             target = rew + (1.0 - done) * self.gamma * qtarg
 
@@ -170,6 +170,7 @@ class QLearning(Trainer):
             loss = self.loss(batch)
             loss.backward()
             self.opt.step()
+            print(self.opt)
 
             self.losses.append(loss.detach())
 
@@ -214,7 +215,7 @@ class QLearning(Trainer):
 
         ep_lengths = []
         ep_rewards = []
-        for i in range(1):
+        for i in range(self.eval_nepisodes):
             reset()
             done = False
             ep_lengths.append(0)
@@ -224,6 +225,7 @@ class QLearning(Trainer):
                 frames.append(ob)
                 ep_lengths[-1] += 1
                 ep_rewards[-1] += r
+        self._reset()
 
         outs = {
             'episode_lengths': ep_lengths,
