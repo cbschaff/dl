@@ -170,7 +170,6 @@ class QLearning(Trainer):
             loss = self.loss(batch)
             loss.backward()
             self.opt.step()
-            print(self.opt)
 
             self.losses.append(loss.detach())
 
