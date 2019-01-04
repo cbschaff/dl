@@ -12,6 +12,7 @@ optim.RMSprop.eps = 0.01
 QLearning.double_dqn = False
 QLearning.prioritized_replay = False
 
+QLearning.env = @atari_env()
 QLearning.optimizer = @optim.RMSprop
 QLearning.gamma = 0.99
 QLearning.batch_size = 32
@@ -35,6 +36,10 @@ Trainer.save_period = 1000000
 Checkpointer.min_ckpt_period = 10000000
 Checkpointer.max_ckpts_to_keep = 1
 
+atari_env.game_name = "Pong"
 atari_env.sticky_actions = False
+atari_env.noop = True
+atari_env.seed = 0
+atari_env.frameskip = 4
 atari_env.episode_life = True
 atari_env.clip_rewards = True

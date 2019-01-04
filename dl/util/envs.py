@@ -1,4 +1,4 @@
-from baselines.common.atari_wrappers import make_atari, wrap_deepmind
+from baselines.common.atari_wrappers import *
 from gym import ObservationWrapper
 from gym.spaces import Box
 from dl.util import Monitor
@@ -19,11 +19,17 @@ class ImageTranspose(ObservationWrapper):
     def observation(self, obs):
         return obs.transpose(2,0,1)
 
-@gin.configurable(blacklist=['game_name', 'seed', 'rank'])
-def atari_env(game_name, seed=0, rank=0, sticky_actions=False, episode_life=True, clip_rewards=True, frame_stack=False, scale=False):
+@gin.configurable(blacklist=['rank'])
+def atari_env(game_name, seed=0, rank=0, sticky_actions=False, timelimit=True, noop=True, frameskip=4, episode_life=True, clip_rewards=True, frame_stack=False, scale=False):
     id = game_name + 'NoFrameskip'
     id += '-v0' if sticky_actions else '-v4'
-    env = make_atari(id)
+    env = gym.make(id)
+    if not timelimit:
+        env = env.env
+    assert 'NoFrameskip' in env.spec.id
+    if noop:
+        env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=frameskip)
     env.seed(seed + rank)
     env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
     env = wrap_deepmind(env, episode_life=episode_life, clip_rewards=clip_rewards, frame_stack=frame_stack, scale=scale)

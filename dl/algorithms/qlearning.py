@@ -9,7 +9,7 @@ import numpy as np
 from collections import deque
 
 
-@gin.configurable(blacklist=['logdir','env'])
+@gin.configurable(blacklist=['logdir'])
 class QLearning(Trainer):
     def __init__(self,
                  logdir,
@@ -249,11 +249,9 @@ from dl.util import atari_env, load_gin_configs
 
 class TestQLearning(unittest.TestCase):
     def test_ql(self):
-        env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, target_update_period=100, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
+        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, target_update_period=100, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
         ql.train()
-        env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
+        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
         ql.train() # loads checkpoint
         assert ql.buffer.num_in_buffer == 1000
         shutil.rmtree('logs')
