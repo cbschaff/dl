@@ -107,7 +107,7 @@ class QLearning(Trainer):
         state = self.ckptr.load(t)
         state['buffer'] = np.load(os.path.join(self.ckptr.ckptdir, 'buffer.npz'))
         self.load_state_dict(state)
-        self.t_start = 0 if t is None else t
+        self.t_start = self.t
 
     def act(self):
         idx = self.buffer.store_frame(self._ob)
