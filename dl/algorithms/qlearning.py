@@ -62,7 +62,6 @@ class QLearning(Trainer):
         self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         self.net.to(self.device)
         self.target_net.to(self.device)
-        self.ind = torch.arange(self.batch_size).to(self.device) # used for indexing
         self.opt = optimizer(self.net.parameters())
         if huber_loss:
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
@@ -132,12 +131,13 @@ class QLearning(Trainer):
             ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
 
         qs = self.net(ob).qvals
-        q = qs[self.ind, ac.long()]
+        q = qs.gather(1, ac.long().unsqueeze(1)).squeeze(1)
 
         with torch.no_grad():
             if self.double_dqn:
                 next_ac = self.net(next_ob).action
-                qtarg = self.target_net(next_ob).qvals[self.ind, next_ac.long()]
+                qtargs = self.target_net(next_ob).qvals
+                qtarg = qtargs.gather(next_ac.long().unsqueeeze(1)).squeeze(1)
             else:
                 qtarg = self.target_net(next_ob).max_q
             assert rew.shape == qtarg.shape
@@ -148,8 +148,6 @@ class QLearning(Trainer):
 
         if self.prioritized_replay:
             self.buffer.update_priorities(idx, err.detach().cpu().numpy())
-
-        if self.prioritized_replay:
             assert err.shape == weight.shape
             err = weight * err
         return err.mean()
@@ -167,6 +165,7 @@ class QLearning(Trainer):
                 batch = self.buffer.sample(self.batch_size, beta)
             else:
                 batch = self.buffer.sample(self.batch_size)
+
             self.opt.zero_grad()
             loss = self.loss(batch)
             loss.backward()
@@ -177,6 +176,7 @@ class QLearning(Trainer):
         if self.t % self.log_period == 0 and self.t > 0:
             with torch.no_grad():
                 meanloss = (sum(self.losses) / self.log_period).cpu().numpy()
+            self.losses = []
             logger.log("========================|  Timestep: {}  |========================".format(self.t))
             # Logging stats...
             logger.logkv('Loss', meanloss)
@@ -248,7 +248,7 @@ from dl.util import atari_env, load_gin_configs
 class TestQLearning(unittest.TestCase):
     def test_ql(self):
         env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
+        ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, target_update_period=100, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
         ql.train()
         env = atari_env('Pong')
         ql = QLearning('logs', env, learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
