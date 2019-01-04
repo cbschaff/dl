@@ -47,6 +47,7 @@ class QLearning(Trainer):
         self.target_update_period = target_update_period
         self.double_dqn = double_dqn
         self.eval_eps = eval_eps
+        self.eval_nepisodes = eval_nepisodes
         self.log_period = log_period
         self.prioritized_replay = prioritized_replay
         self.buffer = buffer(buffer_size, frame_stack)
