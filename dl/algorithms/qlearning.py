@@ -151,7 +151,9 @@ class QLearning(Trainer):
             self.buffer.update_priorities(idx, err.detach().cpu().numpy() + 1e-6)
             assert err.shape == weight.shape
             err = weight * err
-        return err.mean()
+        loss = err.mean()
+        self.losses.append(loss)
+        return loss
 
     def step(self):
         self.act()
@@ -172,25 +174,26 @@ class QLearning(Trainer):
             loss.backward()
             self.opt.step()
 
-            self.losses.append(loss.detach())
-
         if self.t % self.log_period == 0 and self.t > 0:
-            with torch.no_grad():
-                meanloss = (sum(self.losses) / self.log_period).cpu().numpy()
-            self.losses = []
-            logger.log("========================|  Timestep: {}  |========================".format(self.t))
-            # Logging stats...
-            logger.logkv('Loss', meanloss)
-            logger.logkv('timesteps', self.t)
-            logger.logkv('fps', int((self.t - self.t_start) / (time.time() - self.time_start)))
-            logger.logkv('time_elapsed', time.time() - self.time_start)
-            logger.logkv('time spent exploring', self.eps_schedule.value(self.t))
-
-            monitor = find_monitor(self.env)
-            if monitor is not None:
-                logger.logkv('mean episode length', np.mean(monitor.episode_lengths[-100:]))
-                logger.logkv('mean episode reward', np.mean(monitor.episode_rewards[-100:]))
+            self.log()
             logger.dumpkvs()
+
+    def log(self):
+        with torch.no_grad():
+            meanloss = (sum(self.losses) / self.log_period).cpu().numpy()
+        self.losses = []
+        logger.log("========================|  Timestep: {}  |========================".format(self.t))
+        # Logging stats...
+        logger.logkv('Loss', meanloss)
+        logger.logkv('timesteps', self.t)
+        logger.logkv('fps', int((self.t - self.t_start) / (time.time() - self.time_start)))
+        logger.logkv('time_elapsed', time.time() - self.time_start)
+        logger.logkv('time spent exploring', self.eps_schedule.value(self.t))
+
+        monitor = find_monitor(self.env)
+        if monitor is not None:
+            logger.logkv('mean episode length', np.mean(monitor.episode_lengths[-100:]))
+            logger.logkv('mean episode reward', np.mean(monitor.episode_rewards[-100:]))
 
     def evaluate(self):
         import json
@@ -234,7 +237,7 @@ class QLearning(Trainer):
             'mean_reward': np.mean(ep_rewards),
         }
 
-        os.makedirs(os.path.join(self.logdir, 'eval'))
+        os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         with open(os.path.join(self.logdir, f'eval/{self.t}.json'), 'w') as f:
             json.dump(outs, f)
 
