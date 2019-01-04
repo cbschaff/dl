@@ -137,7 +137,7 @@ class QLearning(Trainer):
             if self.double_dqn:
                 next_ac = self.net(next_ob).action
                 qtargs = self.target_net(next_ob).qvals
-                qtarg = qtargs.gather(next_ac.long().unsqueeeze(1)).squeeze(1)
+                qtarg = qtargs.gather(1, next_ac.long().unsqueeze(1)).squeeze(1)
             else:
                 qtarg = self.target_net(next_ob).maxq
             assert rew.shape == qtarg.shape
