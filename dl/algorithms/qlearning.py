@@ -176,11 +176,10 @@ class QLearning(Trainer):
 
         if self.t % self.log_period == 0 and self.t > 0:
             self.log()
-            logger.dumpkvs()
 
     def log(self):
         with torch.no_grad():
-            meanloss = (sum(self.losses) / self.log_period).cpu().numpy()
+            meanloss = (sum(self.losses) / len(self.losses)).cpu().numpy()
         self.losses = []
         logger.log("========================|  Timestep: {}  |========================".format(self.t))
         # Logging stats...
@@ -194,6 +193,7 @@ class QLearning(Trainer):
         if monitor is not None:
             logger.logkv('mean episode length', np.mean(monitor.episode_lengths[-100:]))
             logger.logkv('mean episode reward', np.mean(monitor.episode_rewards[-100:]))
+        logger.dumpkvs()
 
     def evaluate(self):
         import json
@@ -218,16 +218,24 @@ class QLearning(Trainer):
 
         ep_lengths = []
         ep_rewards = []
+        monitor = find_monitor(self.env)
         for i in range(self.eval_nepisodes):
             reset()
             done = False
-            ep_lengths.append(0)
-            ep_rewards.append(0)
+            if monitor is None:
+                ep_lengths.append(0)
+                ep_rewards.append(0)
             while not done:
                 ob, r, done, _ = self.env.step(eps_greedy())
                 frames.append(ob)
-                ep_lengths[-1] += 1
-                ep_rewards[-1] += r
+                if monitor is None:
+                    ep_lengths[-1] += 1
+                    ep_rewards[-1] += r
+                else:
+                    done = monitor.needs_reset
+                    if done:
+                        ep_lengths.append(monitor.episode_lengths[-1])
+                        ep_rewards.append(monitor.episode_rewards[-1])
         self._reset()
 
         outs = {
