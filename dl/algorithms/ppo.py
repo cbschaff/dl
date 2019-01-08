@@ -33,7 +33,6 @@ class PPO(Trainer):
                  clip_param=0.2,
                  gamma=0.99,
                  lambda_=1.0,
-                 huber_loss=True,
                  norm_observations=True,
                  norm_advantages=True,
                  eval_nepisodes=100,
@@ -83,10 +82,6 @@ class PPO(Trainer):
             for i,state in enumerate(self.recurrent_state_size):
                 self.init_state.append(torch.zeros(size=[self.nenv] + list(state.shape), device=self.device))
 
-        if huber_loss:
-            self.criterion = torch.nn.SmoothL1Loss(reduction='none')
-        else:
-            self.criterion = torch.nn.MSELoss(reduction='none')
         self.t, self.t_start = 0,0
         self.losses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
         self.meanlosses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
@@ -154,9 +149,10 @@ class PPO(Trainer):
         self.losses['pi'].append(pi_loss)
 
         # compute value loss
-        vloss1 = self.criterion(outs.value, batch['vtarg'])
+        criterion = torch.nn.MSELoss(reduction='none')
+        vloss1 = 0.5 * criterion(outs.value, batch['vtarg'])
         vpred_clipped = batch['vpred'] + (outs.value - batch['vpred']).clamp(-self.clip_param, self.clip_param)
-        vloss2 = self.criterion(vpred_clipped, batch['vtarg'])
+        vloss2 = 0.5 * criterion(vpred_clipped, batch['vtarg'])
         vf_loss = torch.max(vloss1, vloss2).mean()
         self.losses['value'].append(vf_loss)
 
