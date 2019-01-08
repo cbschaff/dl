@@ -20,18 +20,10 @@ class AppendResultsWriter(ResultsWriter):
                     filename = osp.join(filename, Monitor.EXT)
                 else:
                     filename = filename + "." + Monitor.EXT
-            self.f = open(filename, "wt")
-            if isinstance(header, dict):
-                header = '# {} \n'.format(json.dumps(header))
-            self.f.write(header)
-            self.logger = csv.DictWriter(self.f, fieldnames=('r', 'l', 't')+tuple(extra_keys))
-            self.logger.writeheader()
-            self.f.flush()
 
             if osp.exists(filename):
                 with open(filename, 'rt') as f:
                     info = json.loads(f.readline()[1:])
-                    print(info)
                     self.tstart = info['t_start']
                 self.f = open(filename, 'at')
                 self.logger = csv.DictWriter(self.f, fieldnames=('r', 'l', 't')+tuple(extra_keys))

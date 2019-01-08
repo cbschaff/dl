@@ -6,13 +6,13 @@ import dl.util
 optim.RMSprop.lr = 0.00025
 optim.RMSprop.alpha = 0.95
 optim.RMSprop.centered = True
-optim.RMSprop.momentum = 0.95
-optim.RMSprop.eps = 0.01
+optim.RMSprop.momentum = 0.
+optim.RMSprop.eps = 0.00001
 
 QLearning.double_dqn = False
 QLearning.prioritized_replay = False
 
-QLearning.env = @atari_env()
+QLearning.env_fn = @atari_env
 QLearning.optimizer = @optim.RMSprop
 QLearning.gamma = 0.99
 QLearning.batch_size = 32

@@ -1,0 +1,37 @@
+import dl.util.gin_torch_externals
+import dl.trainer
+import dl.util
+
+optim.Adam.lr = 0.00025
+optim.Adam.betas = (0.9, 0.999)
+
+PPO.nenv = 8
+PPO.optimizer = @optim.Adam
+PPO.gamma = 0.99
+PPO.lambda_ = 0.95
+PPO.clip_param = 0.1
+PPO.steps_per_iter = 128
+PPO.batch_size = 32
+PPO.epochs_per_iter = 4
+PPO.max_grad_norm = 0.5
+PPO.ent_coef = 0.01
+PPO.vf_coef = 0.5
+PPO.norm_advantages = True
+PPO.norm_observations = False
+
+Trainer.maxt = 10000000
+Trainer.eval = True
+Trainer.eval_period = 1000000
+Trainer.save_period = 1000000
+
+Checkpointer.min_ckpt_period = 1000000
+Checkpointer.max_ckpts_to_keep = 1
+
+atari_env.game_name = "Pong"
+atari_env.sticky_actions = False
+atari_env.noop = True
+atari_env.seed = 0
+atari_env.frameskip = 4
+atari_env.episode_life = True
+atari_env.clip_rewards = True
+atari_env.frame_stack = 4

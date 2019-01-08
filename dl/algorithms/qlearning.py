@@ -1,9 +1,9 @@
 from dl import Trainer
 from dl.modules import QFunction
-from dl.util import ReplayBuffer, PrioritizedReplayBuffer, Checkpointer
+from dl.util import ReplayBuffer, PrioritizedReplayBuffer
 from dl.util import logger, find_monitor
 from baselines.common.schedules import LinearSchedule
-import gin, os, time
+import gin, os, time, json
 import torch
 import numpy as np
 from collections import deque
@@ -13,7 +13,7 @@ from collections import deque
 class QLearning(Trainer):
     def __init__(self,
                  logdir,
-                 env,
+                 env_fn,
                  optimizer,
                  gamma=0.99,
                  batch_size=32,
@@ -35,10 +35,11 @@ class QLearning(Trainer):
                  t_beta_max=int(1e7),
                  gpu=True,
                  log_period=1000,
-                 trainer_kwargs={}
+                 **trainer_kwargs
                  ):
         super().__init__(logdir, **trainer_kwargs)
-        self.env = env
+        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
+        self.env = env_fn(rank=0)
         self.gamma = gamma
         self.batch_size = batch_size
         self.update_period = update_period
@@ -56,10 +57,10 @@ class QLearning(Trainer):
             self.beta_schedule = LinearSchedule(t_beta_max, 1.0, replay_beta)
         self.eps_schedule = LinearSchedule(exploration_timesteps, final_eps, 1.0)
 
-        s = env.observation_space.shape
+        s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        self.net = self._make_qfunction(ob_shape, env.action_space)
-        self.target_net = self._make_qfunction(ob_shape, env.action_space)
+        self.net = self._make_qfunction(ob_shape, self.env.action_space)
+        self.target_net = self._make_qfunction(ob_shape, self.env.action_space)
         self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         self.net.to(self.device)
         self.target_net.to(self.device)
@@ -69,7 +70,6 @@ class QLearning(Trainer):
         else:
             self.criterion = torch.nn.MSELoss(reduction='none')
         self.t, self.t_start = 0,0
-        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
         self.losses = []
 
         self._reset()
@@ -199,7 +199,6 @@ class QLearning(Trainer):
         logger.dumpkvs()
 
     def evaluate(self):
-        import json
         frames = deque(maxlen=self.frame_stack)
         def reset():
             self._reset()
@@ -263,31 +262,31 @@ from dl.util import atari_env, load_gin_configs
 
 class TestQLearning(unittest.TestCase):
     def test_ql(self):
-        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, target_update_period=100, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
+        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, target_update_period=100, maxt=1000, eval=True, eval_period=1000)
         ql.train()
-        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, trainer_kwargs={'maxt': 1000, 'eval':True, 'eval_period':1000})
+        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, maxt=1000, eval=True, eval_period=1000)
         ql.train() # loads checkpoint
         assert ql.buffer.num_in_buffer == 1000
         shutil.rmtree('logs')
 
 
     def test_double_ql(self):
-        env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, double_dqn=True, trainer_kwargs={'maxt': 1000})
+        env = lambda rank: atari_env('Pong', rank=rank)
+        ql = QLearning('logs', env, learning_starts=100, double_dqn=True, maxt=1000)
         ql.train()
         shutil.rmtree('logs')
 
     def test_prioritized_ql(self):
-        env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, double_dqn=True, prioritized_replay=True, trainer_kwargs={'maxt': 1000})
+        env = lambda rank: atari_env('Pong', rank=rank)
+        ql = QLearning('logs', env, learning_starts=100, double_dqn=True, prioritized_replay=True, maxt=1000)
         ql.train()
         shutil.rmtree('logs')
 
     def test_gpu(self):
         if not torch.cuda.is_available():
             return
-        env = atari_env('Pong')
-        ql = QLearning('logs', env, learning_starts=100, gpu=True, trainer_kwargs={'maxt': 1000})
+        env = lambda rank: atari_env('Pong', rank=rank)
+        ql = QLearning('logs', env, learning_starts=100, gpu=True, maxt=1000)
         ql.train()
         shutil.rmtree('logs')
 

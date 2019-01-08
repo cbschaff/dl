@@ -36,6 +36,8 @@ The constructors for these modules generally take as input:
                             of a DQN)
 
             For a recurrent base:
+                - base has a method named recurrent_state_size, which returns
+                  a list of shapes for each temporal state of the model.
                 - base.forward has the following interface:
                     Args:
                         X (torch.Tensor):
@@ -102,7 +104,7 @@ class QFunction(nn.Module):
 
 @gin.configurable(whitelist=['base', 'critic_base'])
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, critic_base=None):
+    def __init__(self, obs_shape, action_space, base=None, critic_base=None, norm_observations=False):
         """
         Args:
             obs_shape (tuple):         See above
@@ -112,6 +114,8 @@ class Policy(nn.Module):
                     The base network for the value function.
                     If not specified, critic_base will be the same as base.
                     If specified, critic_base is assumed to be not recurrent.
+            running_ob_norm (bool):
+                    If True, normalize observations passed to forward.
         """
         super().__init__()
         if base:
@@ -139,6 +143,11 @@ class Policy(nn.Module):
             with torch.no_grad():
                 in_shape = self.critic_base(torch.zeros(obs_shape)[None]).shape[-1]
         self.vf = nn.Linear(in_shape, 1)
+
+        if norm_observations:
+            self.running_norm = RunningObNorm(obs_shape)
+        else:
+            self.running_norm = None
 
         self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'dist', 'state_out'])
 
@@ -169,6 +178,8 @@ class Policy(nn.Module):
                 out.dist:   The action distribution
                 out.state_out:  The temporal state of base (See above for details)
         """
+        if self.running_norm:
+            X = self.running_norm(X)
         out, vf_out, state_out = self._run_bases(X, mask, state_in)
 
         dist = self.dist(out)
@@ -180,6 +191,12 @@ class Policy(nn.Module):
         value = self.vf(vf_out).squeeze(-1)
 
         return self.outputs(value=value, action=action, logp=dist.log_prob(action), dist=dist, state_out=state_out)
+
+    def recurrent_state_size(self):
+        if not hasattr(self.base, 'recurrent_state_size'):
+            return None
+        else:
+            return self.base.recurrent_state_size()
 
 
 from dl.util import conv_out_shape
@@ -235,7 +252,7 @@ class TestRLModules(unittest.TestCase):
 
     def testPolicy(self):
         env = atari_env('Pong')
-        net = Policy(env.observation_space.shape, env.action_space)
+        net = Policy(env.observation_space.shape, env.action_space, running_ob_norm=True)
         ob = env.reset()
         for _ in range(10):
             outs = net(torch.from_numpy(ob[None]))
@@ -243,6 +260,11 @@ class TestRLModules(unittest.TestCase):
             assert outs.value.shape == (1,)
             assert outs.state_out is None
             ob, r, done, _ = env.step(outs.action[0])
+
+        state = net.state_dict()
+        assert 'running_norm.mean' in state
+        assert 'running_norm.var' in state
+        assert 'running_norm.count' in state
 
 
 if __name__=='__main__':

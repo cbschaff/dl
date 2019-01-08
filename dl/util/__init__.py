@@ -4,3 +4,4 @@ from dl.util.ckptr import Checkpointer
 from dl.util.monitor import *
 from dl.util.misc import *
 from dl.util.envs import *
+from dl.util.rollout import RolloutStorage
