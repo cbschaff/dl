@@ -179,12 +179,13 @@ class PPO(Trainer):
                 next_value = self.net(self._ob, mask=self._mask, state_in=self._state).value
             else:
                 next_value = self.net(self._ob).value
-        self.rollout.compute_targets(next_value, self._mask, self.gamma, use_gae=True, lambda_=self.lambda_, norm_advantages=self.norm_advantages)
+            self.rollout.compute_targets(next_value, self._mask, self.gamma, use_gae=True, lambda_=self.lambda_, norm_advantages=self.norm_advantages)
 
         # update running norm
         if self.norm_observations:
-            batch_mean, batch_var, batch_count = self.rollout.compute_ob_stats()
-            self.net.running_norm.update(batch_mean, batch_var, batch_count)
+            with torch.no_grad():
+                batch_mean, batch_var, batch_count = self.rollout.compute_ob_stats()
+                self.net.running_norm.update(batch_mean, batch_var, batch_count)
 
         # update model
         for _ in range(self.epochs_per_iter):

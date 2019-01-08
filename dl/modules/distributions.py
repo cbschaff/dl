@@ -25,6 +25,9 @@ class Normal(D.Normal):
     def log_prob(self, ac):
         return super().log_prob(ac).sum(-1)
 
+    def entropy(self):
+        return super().entropy().sum(-1)
+
 
 class Categorical(nn.Module):
     """
@@ -96,6 +99,7 @@ class TestDistributions(unittest.TestCase):
         assert torch.all(dist.mode()[0] == dist.mode()[1])
         assert dist.mode().shape == (2, 1)
         assert dist.log_prob(ac).shape == (2,)
+        assert dist.entropy().shape == (2,)
 
     def test_normal(self):
         dg = DiagGaussian(10, 2)
@@ -106,6 +110,7 @@ class TestDistributions(unittest.TestCase):
         assert torch.all(dist.mode()[0] == dist.mode()[1])
         assert dist.mode().shape == (2, 2)
         assert dist.log_prob(ac).shape == (2,)
+        assert dist.entropy().shape == (2,)
 
 
 if __name__ == '__main__':
