@@ -80,7 +80,7 @@ class PPO(Trainer):
             self.rollout = RolloutStorage(steps_per_iter, self.nenv, device=self.device, other_keys=['logp'], recurrent_state_keys=self.recurrent_keys)
             self.init_state = []
             for i,state in enumerate(self.recurrent_state_size):
-                self.init_state.append(torch.zeros(size=[self.nenv] + list(state.shape)))
+                self.init_state.append(torch.zeros(size=[self.nenv] + list(state.shape), device=self.device))
 
         if huber_loss:
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
@@ -90,8 +90,8 @@ class PPO(Trainer):
         self.losses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
         self.meanlosses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
 
-        self._ob = torch.from_numpy(self.env.reset())
-        self._mask = torch.FloatTensor([0. for _ in range(self.nenv)])
+        self._ob = torch.from_numpy(self.env.reset()).to(self.device)
+        self._mask = torch.FloatTensor([0. for _ in range(self.nenv)], device=self.device)
         self._state = self.init_state
 
     def _make_policy(self, ob_shape, action_space):
@@ -130,8 +130,8 @@ class PPO(Trainer):
             for i,name in self.recurrent_keys:
                 data[name] = self._state[i]
         self.rollout.insert(data)
-        self._ob = torch.from_numpy(ob)
-        self._mask = torch.FloatTensor([0.0 if done_ else 1.0 for done_ in done])
+        self._ob = torch.from_numpy(ob).to(self.device)
+        self._mask = torch.FloatTensor([0.0 if done_ else 1.0 for done_ in done], device=self.device)
         self._state = outs.state_out
         self.t += self.nenv
 
