@@ -91,7 +91,7 @@ class PPO(Trainer):
         self.meanlosses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
 
         self._ob = torch.from_numpy(self.env.reset()).to(self.device)
-        self._mask = torch.FloatTensor([0. for _ in range(self.nenv)], device=self.device)
+        self._mask = torch.Tensor([0. for _ in range(self.nenv)], device=self.device)
         self._state = self.init_state
 
     def _make_policy(self, ob_shape, action_space):
@@ -131,7 +131,7 @@ class PPO(Trainer):
                 data[name] = self._state[i]
         self.rollout.insert(data)
         self._ob = torch.from_numpy(ob).to(self.device)
-        self._mask = torch.FloatTensor([0.0 if done_ else 1.0 for done_ in done], device=self.device)
+        self._mask = torch.Tensor([0.0 if done_ else 1.0 for done_ in done], device=self.device)
         self._state = outs.state_out
         self.t += self.nenv
 
@@ -237,7 +237,7 @@ class PPO(Trainer):
         for i in range(self.eval_nepisodes):
             ob = eval_env.reset()
             if self.recurrent:
-                mask = torch.FloatTensor([0.]).to(self.device)
+                mask = torch.Tensor([0.]).to(self.device)
                 state = self.init_state.to(self.device)
             done = False
             if monitor is None:
@@ -253,7 +253,7 @@ class PPO(Trainer):
                     action = self.net(ob).action
                 ob, r, done, _ = eval_env.step(action)
                 if self.recurrent:
-                    mask = torch.FloatTensor([1.]).to(self.device)
+                    mask = torch.Tensor([1.]).to(self.device)
                 if monitor is None:
                     ep_lengths[-1] += 1
                     ep_rewards[-1] += r
