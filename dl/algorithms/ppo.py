@@ -91,7 +91,7 @@ class PPO(Trainer):
         self.meanlosses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
 
         self._ob = torch.from_numpy(self.env.reset()).to(self.device)
-        self._mask = torch.Tensor([0. for _ in range(self.nenv)], device=self.device)
+        self._mask = torch.Tensor([0. for _ in range(self.nenv)]).to(self.device)
         self._state = self.init_state
 
     def _make_policy(self, ob_shape, action_space):
@@ -131,7 +131,7 @@ class PPO(Trainer):
                 data[name] = self._state[i]
         self.rollout.insert(data)
         self._ob = torch.from_numpy(ob).to(self.device)
-        self._mask = torch.Tensor([0.0 if done_ else 1.0 for done_ in done], device=self.device)
+        self._mask = torch.Tensor([0.0 if done_ else 1.0 for done_ in done]).to(self.device)
         self._state = outs.state_out
         self.t += self.nenv
 
