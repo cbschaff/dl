@@ -77,6 +77,7 @@ class PPO(Trainer):
             self.init_state = None
         else:
             self.recurrent_keys = [f'state{i}' for i in range(len(self.recurrent_state_size))]
+            self.recurrent = True
             self.rollout = RolloutStorage(steps_per_iter, self.nenv, device=self.device, other_keys=['logp'], recurrent_state_keys=self.recurrent_keys)
             self.init_state = []
             for i,state in enumerate(self.recurrent_state_size):
@@ -143,8 +144,9 @@ class PPO(Trainer):
             outs = self.net(batch['ob'])
 
         # compute policy loss
-        assert outs.logp.shape == batch['logp'].shape
-        ratio = torch.exp(outs.logp - batch['logp'])
+        logp = outs.dist.log_prob(batch['ac'])
+        assert logp.shape == batch['logp'].shape
+        ratio = torch.exp(logp - batch['logp'])
         assert ratio.shape == batch['atarg'].shape
         ploss1 = ratio * batch['atarg']
         ploss2 = torch.clamp(ratio, 1.0-self.clip_param, 1.0+self.clip_param) * batch['atarg']
