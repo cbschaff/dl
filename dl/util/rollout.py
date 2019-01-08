@@ -52,7 +52,7 @@ class RolloutStorage(object):
             self.data['vtarg'][-1] = gae + self.data['vpred'][-1]
             for step in reversed(range(self.num_steps - 1)):
                 delta = self.data['r'][step] + gamma * self.data['mask'][step + 1] * self.data['vpred'][step + 1] - self.data['vpred'][step]
-                gae = delta + gamma * lambda_ * self.data['mask'][step] * gae
+                gae = delta + gamma * lambda_ * self.data['mask'][step + 1] * gae
                 self.data['vtarg'][step] = gae + self.data['vpred'][step]
         else:
             self.data['vtarg'][-1] = self.data['r'][-1] + gamma * next_mask * next_value
