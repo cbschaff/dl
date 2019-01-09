@@ -246,10 +246,10 @@ class PPO(Trainer):
                 ob = torch.from_numpy(ob)[None].to(self.device)
                 if self.recurrent:
                     outs = self.net(ob, mask=mask, state_in=state)
-                    action = outs.action
+                    action = outs.action.cpu().numpy()
                     state = outs.state_out
                 else:
-                    action = self.net(ob).action
+                    action = self.net(ob).action.cpu().numpy()
                 ob, r, done, _ = eval_env.step(action)
                 if self.recurrent:
                     mask = torch.Tensor([1.]).to(self.device)
