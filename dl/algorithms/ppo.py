@@ -94,10 +94,11 @@ class PPO(Trainer):
         return Policy(ob_shape, action_space, norm_observations=self.norm_observations)
 
     def state_dict(self):
-        state = {}
-        state['net'] = self.net.state_dict()
-        state['opt'] = self.opt.state_dict()
-        state['t']   = self.t
+        return {
+            'net': self.net.state_dict(),
+            'opt': self.opt.state_dict(),
+            't':   self.t,
+        }
 
     def load_state_dict(self, state_dict):
         self.net.load_state_dict(state_dict['net'])
