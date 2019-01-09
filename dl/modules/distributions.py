@@ -12,8 +12,8 @@ class CatDist(D.Categorical):
     def mode(self):
         return self.probs.argmax(dim=-1, keepdim=True)
 
-    def sample(self):
-        return super().sample().unsqueeze(-1)
+    def sample(self, *args, **kwargs):
+        return super().sample(*args, **kwargs).unsqueeze(-1)
 
     def log_prob(self, ac):
         return super().log_prob(ac.squeeze(-1))

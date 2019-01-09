@@ -1,7 +1,8 @@
 from dl import Trainer
 from dl.modules import QFunction
 from dl.util import ReplayBuffer, PrioritizedReplayBuffer
-from dl.util import logger, find_monitor
+from dl.util import logger, find_monitor, FrameStack, EpsilonGreedy
+from dl.eval import rl_evaluate, rl_record, rl_plot
 from baselines.common.schedules import LinearSchedule
 import gin, os, time, json
 import torch
@@ -199,57 +200,21 @@ class QLearning(Trainer):
         logger.dumpkvs()
 
     def evaluate(self):
-        frames = deque(maxlen=self.frame_stack)
-        def reset():
-            self._reset()
-            for _ in range(self.frame_stack - 1):
-                frames.append(np.zeros_like(self._ob))
-            frames.append(self._ob)
-
-        def get_ob():
-            return np.concatenate(frames, axis=0)
-
-        def eps_greedy():
-            if self.eval_eps > np.random.rand():
-                ac = self.env.action_space.sample()
-            else:
-                with torch.no_grad():
-                    x = torch.from_numpy(get_ob()).to(self.device)
-                    ac = self.net(x[None]).action
-            return ac
-
-        ep_lengths = []
-        ep_rewards = []
-        monitor = find_monitor(self.env)
-        for i in range(self.eval_nepisodes):
-            reset()
-            done = False
-            if monitor is None:
-                ep_lengths.append(0)
-                ep_rewards.append(0)
-            while not done:
-                ob, r, done, _ = self.env.step(eps_greedy())
-                frames.append(ob)
-                if monitor is None:
-                    ep_lengths[-1] += 1
-                    ep_rewards[-1] += r
-                else:
-                    done = monitor.needs_reset
-                    if done:
-                        ep_lengths.append(monitor.episode_lengths[-1])
-                        ep_rewards.append(monitor.episode_rewards[-1])
-        self._reset()
-
-        outs = {
-            'episode_lengths': ep_lengths,
-            'episode_rewards': ep_rewards,
-            'mean_length': np.mean(ep_lengths),
-            'mean_reward': np.mean(ep_rewards),
-        }
+        if self.frame_stack > 1:
+            eval_env = EpsilonGreedy(FrameStack(self.env, self.frame_stack), self.eval_eps)
+        else:
+            eval_env = EpsilonGreedy(self.env, self.eval_eps)
 
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
-        with open(os.path.join(self.logdir, f'eval/{self.t}.json'), 'w') as f:
-            json.dump(outs, f)
+        outfile = os.path.join(self.logdir, 'eval', self.ckptr.format.format(self.t) + '.json')
+        rl_evaluate(eval_env, self.net, self.eval_nepisodes, outfile, self.device)
+
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(eval_env, self.net, 5, outfile, self.device)
+
+        if find_monitor(self.env):
+            rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
 
     def close(self):
         if hasattr(self.env, 'close'):

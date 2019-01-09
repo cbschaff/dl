@@ -1,5 +1,5 @@
 from baselines.common.atari_wrappers import *
-from gym import ObservationWrapper, Wrapper
+from gym import ObservationWrapper, Wrapper, ActionWrapper
 from baselines.common.vec_env import VecEnvWrapper
 from gym.spaces import Box
 from dl.util import Monitor
@@ -7,6 +7,17 @@ from dl.util import logger
 import gin, os
 import torch
 from collections import deque
+
+
+class EpsilonGreedy(ActionWrapper):
+    def __init__(self, env, epsilon):
+        super().__init__(env)
+        self.epsilon = epsilon
+
+    def action(self, action):
+        if np.random.rand() < self.epsilon:
+            return self.action_space.sample()
+        return action
 
 class VecMonitor(VecEnvWrapper):
     def __init__(self, venv, max_history=1000):
@@ -35,7 +46,7 @@ class VecMonitor(VecEnvWrapper):
         return obs, rews, dones, infos
 
 
-class FrameStack(gym.Wrapper):
+class FrameStack(Wrapper):
     """
     Stack frames without lazy frames.
     """

@@ -7,6 +7,7 @@ from dl import Trainer
 from dl.modules import Policy
 from dl.util import RolloutStorage
 from dl.util import logger, find_monitor, VecMonitor
+from dl.eval import rl_evaluate, rl_record, rl_plot
 from baselines.common.schedules import LinearSchedule
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
@@ -231,48 +232,17 @@ class PPO(Trainer):
     def evaluate(self):
         # create new env to access true reward function and episode lenghts from the Monitor wrapper (if it exists)
         eval_env = self.env_fn(rank=self.nenv+1)
-        ep_lengths = []
-        ep_rewards = []
-        monitor = find_monitor(eval_env)
-        for i in range(self.eval_nepisodes):
-            ob = eval_env.reset()
-            if self.recurrent:
-                mask = torch.Tensor([0.]).to(self.device)
-                state = self.init_state.to(self.device)
-            done = False
-            if monitor is None:
-                ep_lengths.append(0)
-                ep_rewards.append(0)
-            while not done:
-                ob = torch.from_numpy(ob)[None].to(self.device)
-                if self.recurrent:
-                    outs = self.net(ob, mask=mask, state_in=state)
-                    action = outs.action.cpu().numpy()
-                    state = outs.state_out
-                else:
-                    action = self.net(ob).action.cpu().numpy()
-                ob, r, done, _ = eval_env.step(action)
-                if self.recurrent:
-                    mask = torch.Tensor([1.]).to(self.device)
-                if monitor is None:
-                    ep_lengths[-1] += 1
-                    ep_rewards[-1] += r
-                else:
-                    done = monitor.needs_reset
-                    if done:
-                        ep_lengths.append(monitor.episode_lengths[-1])
-                        ep_rewards.append(monitor.episode_rewards[-1])
-
-        outs = {
-            'episode_lengths': ep_lengths,
-            'episode_rewards': ep_rewards,
-            'mean_length': np.mean(ep_lengths),
-            'mean_reward': np.mean(ep_rewards),
-        }
 
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
-        with open(os.path.join(self.logdir, f'eval/{self.t}.json'), 'w') as f:
-            json.dump(outs, f)
+        outfile = os.path.join(self.logdir, 'eval', self.ckptr.format.format(self.t) + '.json')
+        rl_evaluate(eval_env, self.net, self.eval_nepisodes, outfile, self.device)
+
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(eval_env, self.net, 5, outfile, self.device)
+
+        if find_monitor(self.env):
+            rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
 
     def close(self):
         if hasattr(self.env, 'close'):

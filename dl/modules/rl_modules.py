@@ -104,12 +104,14 @@ class QFunction(nn.Module):
 
 @gin.configurable(whitelist=['base', 'critic_base'])
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, critic_base=None, norm_observations=False):
+    def __init__(self, obs_shape, action_space, base=None, critic=True, critic_base=None, norm_observations=False):
         """
         Args:
             obs_shape (tuple):         See above
             action_space (gym.Space):  See above
             base (nn.Module):          See above
+            critic (bool, optional):
+                    If False, no critic will be used.
             critic_base (nn.Module, optional):
                     The base network for the value function.
                     If not specified, critic_base will be the same as base.
@@ -122,10 +124,11 @@ class Policy(nn.Module):
             self.base = base(obs_shape)
         else:
             self.base = get_default_base(obs_shape)
-        if critic_base:
+        if critic and critic_base:
             self.critic_base = critic_base(obs_shape)
         else:
             self.critic_base = None
+        self.critic = critic
         self.action_space = action_space
         with torch.no_grad():
             in_shape = self.base(torch.zeros(obs_shape)[None]).shape[-1]
@@ -139,10 +142,12 @@ class Policy(nn.Module):
             assert False, f"Uknown action space {self.action_space.__class__.__name__}"
 
         # init value function haed
-        if critic_base:
-            with torch.no_grad():
-                in_shape = self.critic_base(torch.zeros(obs_shape)[None]).shape[-1]
-        self.vf = nn.Linear(in_shape, 1)
+        if critic:
+            if critic_base:
+                with torch.no_grad():
+                    in_shape = self.critic_base(torch.zeros(obs_shape)[None]).shape[-1]
+            self.vf = nn.Linear(in_shape, 1)
+
 
         if norm_observations:
             self.running_norm = RunningObNorm(obs_shape)
@@ -157,10 +162,12 @@ class Policy(nn.Module):
             out = self.base(x)
         else:
             out, state_out = self.base(x, mask=mask, state_in=state_in)
-        if self.critic_base:
+        if self.critic and self.critic_base:
             vf_out = self.critic_base(x)
-        else:
+        elif self.critic:
             vf_out = out
+        else:
+            vf_out = None
         return out, vf_out, state_out
 
     def forward(self, X, mask=None, state_in=None, deterministic=False):
@@ -188,7 +195,10 @@ class Policy(nn.Module):
         else:
             action = dist.sample()
 
-        value = self.vf(vf_out).squeeze(-1)
+        if self.critic:
+            value = self.vf(vf_out).squeeze(-1)
+        else:
+            value = None
 
         return self.outputs(value=value, action=action, logp=dist.log_prob(action), dist=dist, state_out=state_out)
 
@@ -252,7 +262,7 @@ class TestRLModules(unittest.TestCase):
 
     def testPolicy(self):
         env = atari_env('Pong')
-        net = Policy(env.observation_space.shape, env.action_space, running_ob_norm=True)
+        net = Policy(env.observation_space.shape, env.action_space, norm_observations=True)
         ob = env.reset()
         for _ in range(10):
             outs = net(torch.from_numpy(ob[None]))

@@ -32,7 +32,10 @@ class Checkpointer():
             t = max(self.ckpts())
         path = self.get_ckpt_path(t)
         assert os.path.exists(path), f"Can't find checkpoint at iteration {t}."
-        return torch.load(path)
+        if torch.cuda.is_available():
+            return torch.load(path)
+        else:
+            return torch.load(path, map_location='cpu')
 
     def prune_ckpts(self):
         if self.max_ckpts_to_keep is None:
