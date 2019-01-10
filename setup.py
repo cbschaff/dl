@@ -14,6 +14,7 @@ setup(name='dl',
           'matplotlib',
           'imageio',
           'pandas',
+          'gin-config'
           # 'pytorch',
           # 'torchvision',
           # 'mpi4py',
