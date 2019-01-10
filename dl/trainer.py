@@ -1,5 +1,5 @@
 import gin, os, time
-from dl.util import Checkpointer
+from dl.util import Checkpointer, logger
 
 @gin.configurable(blacklist=['logdir'])
 class Trainer(object):
@@ -30,6 +30,7 @@ class Trainer(object):
         self.save_period = save_period
         self.maxt = maxt
         self.maxseconds = maxseconds
+        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
 
         self.t = 0
 
@@ -52,6 +53,11 @@ class Trainer(object):
         self.load_state_dict(self.ckptr.load(t))
 
     def train(self):
+        config = gin.operative_config_str()
+        logger.log("=================== CONFIG ===================")
+        logger.log(config)
+        with open(os.path.join(self.logdir, 'config.gin'), 'w') as f:
+            f.write(config)
         self.time_start = time.time()
         if len(self.ckptr.ckpts()) > 0:
             self.load()

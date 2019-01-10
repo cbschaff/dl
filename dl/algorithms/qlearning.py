@@ -39,7 +39,6 @@ class QLearning(Trainer):
                  **trainer_kwargs
                  ):
         super().__init__(logdir, **trainer_kwargs)
-        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
         self.env = env_fn(rank=0)
         self.gamma = gamma
         self.batch_size = batch_size

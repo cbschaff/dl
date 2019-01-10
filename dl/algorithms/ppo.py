@@ -41,7 +41,6 @@ class PPO(Trainer):
                  **trainer_kwargs
     ):
         super().__init__(logdir, **trainer_kwargs)
-        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
         def _env(rank):
             def _thunk():
                 return env_fn(rank)
@@ -267,5 +266,5 @@ class TestPPO(unittest.TestCase):
 
 
 if __name__=='__main__':
-    load_gin_configs(['../configs/ppo.gin'])
+    load_gin_configs(['../configs/ppo.gin'], ['PPO.gpu=False'])
     unittest.main()
