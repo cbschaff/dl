@@ -214,6 +214,7 @@ class QLearning(Trainer):
 
         if find_monitor(self.env):
             rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
+        self._reset()
 
     def close(self):
         if hasattr(self.env, 'close'):
