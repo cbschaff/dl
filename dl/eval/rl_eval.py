@@ -6,6 +6,7 @@ import subprocess as sp
 from dl.util import find_monitor
 import torch
 from dl.eval.rl_plot import plot_results
+import matplotlib.pyplot as plt
 
 
 def rl_evaluate(env, actor, nepisodes, outfile, device='cpu'):
