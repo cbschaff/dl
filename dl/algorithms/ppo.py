@@ -240,7 +240,7 @@ class PPO(Trainer):
         outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
         rl_record(eval_env, self.net, 5, outfile, self.device)
 
-        if find_monitor(self.env):
+        if find_monitor(eval_env):
             rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
 
     def close(self):
