@@ -241,7 +241,7 @@ class PPO(Trainer):
         rl_record(eval_env, self.net, 5, outfile, self.device)
 
         if find_monitor(eval_env):
-            rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
+            rl_plot(os.path.join(self.logdir, 'logs'), eval_env.spec.id, self.t)
 
     def close(self):
         if hasattr(self.env, 'close'):
