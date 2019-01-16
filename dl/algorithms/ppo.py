@@ -41,15 +41,7 @@ class PPO(Trainer):
                  **trainer_kwargs
     ):
         super().__init__(logdir, **trainer_kwargs)
-        def _env(rank):
-            def _thunk():
-                return env_fn(rank)
-            return _thunk
-        if nenv > 1:
-            self.env = SubprocVecEnv([_env(i) for i in range(nenv)])
-        else:
-            self.env = DummyVecEnv([_env(0)])
-        self.env = VecMonitor(self.env, max_history=100)
+        self.env = self._make_env(env_fn, nenv)
         self.nenv = nenv
         self.env_fn = env_fn
         self.batch_size = batch_size
@@ -89,6 +81,17 @@ class PPO(Trainer):
         self._ob = torch.from_numpy(self.env.reset()).to(self.device)
         self._mask = torch.Tensor([0. for _ in range(self.nenv)]).to(self.device)
         self._state = self.init_state
+
+    def _make_env(self, env_fn, nenv):
+        def _env(rank):
+            def _thunk():
+                return env_fn(rank)
+            return _thunk
+        if nenv > 1:
+            env = SubprocVecEnv([_env(i) for i in range(nenv)])
+        else:
+            env = DummyVecEnv([_env(0)])
+        return VecMonitor(env, max_history=100)
 
     def _make_policy(self, ob_shape, action_space):
         return Policy(ob_shape, action_space, norm_observations=self.norm_observations)
