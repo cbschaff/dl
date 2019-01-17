@@ -46,7 +46,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
     #     sp.check_call(['ffmpeg','-h'])
     # except:
     #     assert False, "Please install ffmpeg to record videos."
-    tmpdir = os.path.join(tempfile.gettempdir(), 'video_' + str(time.time()))
+    tmpdir = os.path.join(tempfile.gettempdir(), 'video_' + str(time.monotonic()))
     os.makedirs(tmpdir)
     monitor = find_monitor(env)
     id = 0

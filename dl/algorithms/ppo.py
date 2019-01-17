@@ -224,8 +224,8 @@ class PPO(Trainer):
         self.meanlosses = {'tot':[], 'pi':[], 'value':[], 'ent':[]}
         # Logging stats...
         logger.logkv('timesteps', self.t)
-        logger.logkv('fps', int((self.t - self.t_start) / (time.time() - self.time_start)))
-        logger.logkv('time_elapsed', time.time() - self.time_start)
+        logger.logkv('fps', int((self.t - self.t_start) / (time.monotonic() - self.time_start)))
+        logger.logkv('time_elapsed', time.monotonic() - self.time_start)
 
         logger.logkv('mean episode length', np.mean(self.env.episode_lengths))
         logger.logkv('mean episode reward', np.mean(self.env.episode_rewards))

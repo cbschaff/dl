@@ -58,7 +58,7 @@ class Trainer(object):
         logger.log(config)
         with open(os.path.join(self.logdir, 'config.gin'), 'w') as f:
             f.write(config)
-        self.time_start = time.time()
+        self.time_start = time.monotonic()
         if len(self.ckptr.ckpts()) > 0:
             self.load()
         if self.maxt and self.t > self.maxt:
@@ -71,7 +71,7 @@ class Trainer(object):
         while True:
             if self.maxt and self.t >= self.maxt:
                 break
-            if self.maxseconds and time.time() - self.time_start >= self.maxseconds:
+            if self.maxseconds and time.monotonic() - self.time_start >= self.maxseconds:
                 break
             self.step()
             if self.save_period and (self.t - last_save) >= self.save_period:

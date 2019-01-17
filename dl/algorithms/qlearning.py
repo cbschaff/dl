@@ -188,8 +188,8 @@ class QLearning(Trainer):
         # Logging stats...
         logger.logkv('Loss', meanloss)
         logger.logkv('timesteps', self.t)
-        logger.logkv('fps', int((self.t - self.t_start) / (time.time() - self.time_start)))
-        logger.logkv('time_elapsed', time.time() - self.time_start)
+        logger.logkv('fps', int((self.t - self.t_start) / (time.monotonic() - self.time_start)))
+        logger.logkv('time_elapsed', time.monotonic() - self.time_start)
         logger.logkv('time spent exploring', self.eps_schedule.value(self.t))
 
         monitor = find_monitor(self.env)
