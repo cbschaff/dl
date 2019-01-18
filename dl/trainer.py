@@ -68,18 +68,21 @@ class Trainer(object):
         if self.eval_period:
             last_eval = (self.t // self.eval_period) * self.eval_period
 
-        while True:
-            if self.maxt and self.t >= self.maxt:
-                break
-            if self.maxseconds and time.monotonic() - self.time_start >= self.maxseconds:
-                break
-            self.step()
-            if self.save_period and (self.t - last_save) >= self.save_period:
-                self.save()
-                last_save = self.t
-            if self.eval and (self.t - last_eval) >= self.eval_period:
-                self.evaluate()
-                last_eval = self.t
+        try:
+            while True:
+                if self.maxt and self.t >= self.maxt:
+                    break
+                if self.maxseconds and time.monotonic() - self.time_start >= self.maxseconds:
+                    break
+                self.step()
+                if self.save_period and (self.t - last_save) >= self.save_period:
+                    self.save()
+                    last_save = self.t
+                if self.eval and (self.t - last_eval) >= self.eval_period:
+                    self.evaluate()
+                    last_eval = self.t
+        except KeyboardInterrupt:
+            logger.log("Caught Ctrl-C. Saving model and exiting...")
         if self.t not in self.ckptr.ckpts():
             self.save()
         self.close()
