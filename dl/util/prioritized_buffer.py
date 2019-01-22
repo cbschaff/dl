@@ -147,8 +147,8 @@ class PrioritizedReplayBuffer(object):
     def load_state_dict(self, state_dict):
         self.buffer.load_state_dict(state_dict)
         self._max_priority = state_dict['_max_priority']
-        self._it_sum = state_dict['_it_sum']
-        self._it_min = state_dict['_it_min']
+        self._it_sum = state_dict['_it_sum'][None][0]
+        self._it_min = state_dict['_it_min'][None][0]
 
 
 
