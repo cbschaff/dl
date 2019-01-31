@@ -199,6 +199,7 @@ class QLearning(Trainer):
         logger.dumpkvs()
 
     def evaluate(self):
+        self.net.train(False)
         if self.frame_stack > 1:
             eval_env = EpsilonGreedy(FrameStack(self.env, self.frame_stack), self.eval_eps)
         else:
@@ -215,6 +216,7 @@ class QLearning(Trainer):
         if find_monitor(self.env):
             rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
         self._reset()
+        self.net.train(True)
 
     def close(self):
         if hasattr(self.env, 'close'):

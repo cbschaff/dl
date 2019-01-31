@@ -232,6 +232,7 @@ class PPO(Trainer):
         logger.dumpkvs()
 
     def evaluate(self):
+        self.net.train(False)
         # create new env to access true reward function and episode lenghts from the Monitor wrapper (if it exists)
         eval_env = self.env_fn(rank=self.nenv+1)
 
@@ -245,6 +246,7 @@ class PPO(Trainer):
 
         if find_monitor(eval_env):
             rl_plot(os.path.join(self.logdir, 'logs'), eval_env.spec.id, self.t)
+        self.net.train(True)
 
     def close(self):
         if hasattr(self.env, 'close'):
