@@ -132,16 +132,14 @@ class QLearning(Trainer):
         else:
             ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
 
-        qs = self.net(ob).qvals
-        q = qs.gather(1, ac.long().unsqueeze(1)).squeeze(1)
+        q = self.net(ob, ac).value
 
         with torch.no_grad():
             if self.double_dqn:
-                next_ac = self.net(next_ob).action
-                qtargs = self.target_net(next_ob).qvals
-                qtarg = qtargs.gather(1, next_ac.long().unsqueeze(1)).squeeze(1)
+                next_ac = self.net(next_ob).max_a
+                qtarg = self.target_net(next_ob, next_ac).value
             else:
-                qtarg = self.target_net(next_ob).maxq
+                qtarg = self.target_net(next_ob).max_q
             assert rew.shape == qtarg.shape
             target = rew + (1.0 - done) * self.gamma * qtarg
 

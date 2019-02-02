@@ -8,12 +8,12 @@ import numpy as np
 
 
 """
-This file defines torch modules for a QFunction and Policy.
+This file defines torch modules for ValueFunction, QFunction, and Policy.
 The constructors for these modules generally take as input:
     obs_shape (tuple):
             the shape of the observation space of the environment
     action_space (gym.Space):
-            the action space of the enironment
+            the action space of the enironment. QFunction and Policy only.
     base (nn.Module):
             the base module whose output is the features used by the
             QFunction or Policy. These modules place minor assumptions
@@ -59,11 +59,9 @@ The constructors for these modules generally take as input:
             If the base is not specified, a standard MLP or CNN will
             be used.
 """
-
-
 @gin.configurable(whitelist=['base'])
-class QFunction(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None):
+class ValueFunction(nn.Module):
+    def __init__(self, obs_shape, base=None):
         """
         Args:
             See above. base is assumed to be not recurrent.
@@ -73,16 +71,14 @@ class QFunction(nn.Module):
             self.base = base(obs_shape)
         else:
             self.base = get_default_base(obs_shape)
-        self.action_space = action_space
-        assert self.action_space.__class__.__name__ == 'Discrete'
         with torch.no_grad():
             in_shape = self.base(torch.zeros(obs_shape)[None]).shape[-1]
 
-        self.qvals = nn.Linear(in_shape, self.action_space.n)
-        nn.init.orthogonal_(self.qvals.weight.data, gain=1.0)
-        nn.init.constant_(self.qvals.bias.data, 0)
+        self.vf = nn.Linear(in_shape, 1)
+        nn.init.orthogonal_(self.vf.weight.data, gain=1.0)
+        nn.init.constant_(self.vf.bias.data, 0)
 
-        self.outputs = namedtuple('Outputs', ['action', 'maxq', 'qvals'])
+        self.outputs = namedtuple('Outputs', ['value'])
 
     def forward(self, x):
         """
@@ -96,9 +92,74 @@ class QFunction(nn.Module):
                 out.qvals:  The Q-value for each action
         """
         x = self.base(x)
-        qvals = self.qvals(x)
-        maxq, action = qvals.max(dim=-1)
-        return self.outputs(action=action, maxq=maxq, qvals=qvals)
+        value = self.vf(x).squeeze(-1)
+        return self.outputs(value=value)
+
+
+@gin.configurable(whitelist=['base'])
+class QFunction(nn.Module):
+    def __init__(self, obs_shape, action_space, base=None):
+        """
+        Args:
+            See above. base is assumed to be not recurrent.
+
+        When using a continuous action space, standard qfunction parameterizations
+        take two inputs, state and action. In this case, the interface of
+        'base.forward' is assumed to take both arguements.
+        """
+        super().__init__()
+        self.action_space = action_space
+        self.discrete = action_space.__class__.__name__ == 'Discrete'
+        base_args = [obs_shape] if self.discrete else [obs_shape, action_space.shape]
+        if base:
+            self.base = base(*base_args)
+        else:
+            self.base = get_default_base(*base_args)
+        if self.discrete:
+            with torch.no_grad():
+                in_shape = self.base(torch.zeros(obs_shape)[None]).shape[-1]
+            self.qvals = nn.Linear(in_shape, self.action_space.n)
+        else:
+            with torch.no_grad():
+                ac = torch.from_numpy(np.array([self.action_space.sample()]))
+                in_shape = self.base(torch.zeros(obs_shape)[None], ac).shape[-1]
+            self.qvals = nn.Linear(in_shape, np.prod(self.action_space.shape).item())
+        nn.init.orthogonal_(self.qvals.weight.data, gain=1.0)
+        nn.init.constant_(self.qvals.bias.data, 0)
+
+        self.outputs = namedtuple('Outputs', ['action', 'value', 'max_a', 'max_q', 'qvals'])
+
+    def forward(self, x, action=None):
+        """
+        Computes Q-value.
+        Args:
+            Same as self.base.forward (see above)
+        Returns:
+            out (namedtuple):
+                out.action: If an action is specified, out.action is the same, otherwise it is the argmax of the Q-values
+                out.value: The q value of (x, out.action)
+                out.max_a:  The argmax of the Q-values   (only available for discrete action spaces)
+                out.max_q:  The max of the Q-values      (only available for discrete action spaces)
+                out.qvals:  The Q-value for each action  (only available for discrete action spaces)
+        """
+        if action is None:
+            assert self.discrete, "You must provide an action for a continuous action space"
+            x = self.base(x)
+            qvals = self.qvals(x)
+            maxq, ac = qvals.max(dim=-1)
+            return self.outputs(action=ac, value=maxq, max_a=ac, max_q=maxq, qvals=qvals)
+        elif self.discrete:
+            x = self.base(x)
+            qvals = self.qvals(x)
+            maxq, maxa = qvals.max(dim=-1)
+            value = qvals.gather(1, action.long().unsqueeze(1)).squeeze(1)
+            return self.outputs(action=action, value=value, max_a=maxa, max_q=maxq, qvals=qvals)
+        else:
+            x = self.base(x, action)
+            value = self.qvals(x).squeeze(1)
+            return self.outputs(action=action, value=value, max_a=None, max_q=None, qvals=None)
+
+
 
 
 
@@ -137,7 +198,7 @@ class Policy(nn.Module):
         if self.action_space.__class__.__name__ == 'Discrete':
             self.dist = Categorical(in_shape, self.action_space.n)
         elif self.action_space.__class__.__name__ == 'Box':
-            self.dist = DiagGaussian(in_shape, self.action_space.n)
+            self.dist = DiagGaussian(in_shape, np.prod(self.action_space.shape).item())
         else:
             assert False, f"Uknown action space {self.action_space.__class__.__name__}"
 
@@ -237,7 +298,7 @@ class NatureDQN(nn.Module):
 
 def get_default_base(obs_shape):
     if len(obs_shape) == 1:
-        return FeedForward(obs_shape[0], units=[64,64,64], activation_fn=F.tanh, activate_last=True)
+        return FeedForwardNet(obs_shape[0], units=[64,64,64], activation_fn=F.tanh, activate_last=True)
     if len(obs_shape) == 3:
         return NatureDQN(obs_shape)
     assert False, f"No default network for inputs of {len(obs_shape)} dimensions"
@@ -246,8 +307,18 @@ def get_default_base(obs_shape):
 
 import unittest
 from dl.util import atari_env
+import gym
 
 class TestRLModules(unittest.TestCase):
+    def testValueFunction(self):
+        env = atari_env('Pong')
+        net = ValueFunction(env.observation_space.shape)
+        ob = env.reset()
+        for _ in range(10):
+            outs = net(torch.from_numpy(ob[None]))
+            assert outs.value.shape == (1,)
+            ob, r, done, _ = env.step(env.action_space.sample())
+
     def testQFunction(self):
         env = atari_env('Pong')
         net = QFunction(env.observation_space.shape, env.action_space)
@@ -255,8 +326,35 @@ class TestRLModules(unittest.TestCase):
         for _ in range(10):
             outs = net(torch.from_numpy(ob[None]))
             assert outs.action.shape == (1,)
-            assert outs.maxq.shape == (1,)
+            assert outs.max_q.shape == (1,)
             assert outs.qvals.shape == (1,env.action_space.n)
+            ob, r, done, _ = env.step(outs.action[0])
+
+        out1 = net(torch.from_numpy(ob[None]))
+        outs = net(torch.from_numpy(ob[None]), (out1.action + 1) % env.action_space.n)
+        assert outs.action.shape == (1,)
+        assert outs.max_q.shape == (1,)
+        assert outs.qvals.shape == (1,env.action_space.n)
+        assert outs.action != out1.action
+        assert outs.value != out1.value
+
+        class SABase(nn.Module):
+            def __init__(self, ob_shape, ac_shape):
+                super().__init__()
+
+            def forward(self, x, a):
+                return x
+
+        env = gym.make('MountainCarContinuous-v0')
+        net = QFunction(env.observation_space.shape, env.action_space, base=SABase)
+        ob = env.reset()
+        for _ in range(10):
+            ac = torch.from_numpy(np.array([env.action_space.sample()])).float()
+            outs = net(torch.from_numpy(ob[None]).float(), ac)
+            assert outs.action.shape == (1,*env.action_space.shape)
+            assert outs.value.shape == (1,)
+            assert outs.max_q == None
+            assert outs.qvals == None
             ob, r, done, _ = env.step(outs.action[0])
 
 
@@ -270,11 +368,21 @@ class TestRLModules(unittest.TestCase):
             assert outs.value.shape == (1,)
             assert outs.state_out is None
             ob, r, done, _ = env.step(outs.action[0])
-
         state = net.state_dict()
         assert 'running_norm.mean' in state
         assert 'running_norm.var' in state
         assert 'running_norm.count' in state
+
+        env = gym.make('MountainCarContinuous-v0')
+        net = Policy(env.observation_space.shape, env.action_space)
+        ob = env.reset()
+        for _ in range(10):
+            outs = net(torch.from_numpy(ob[None]).float())
+            assert outs.action.shape == (1,*env.action_space.shape)
+            assert outs.value.shape == (1,)
+            assert outs.state_out is None
+            ob, r, done, _ = env.step(outs.action[0])
+
 
 
 if __name__=='__main__':
