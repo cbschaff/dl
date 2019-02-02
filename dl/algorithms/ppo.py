@@ -25,6 +25,7 @@ class PPO(Trainer):
                  env_fn,
                  nenv,
                  optimizer,
+                 policy=Policy,
                  batch_size=32,
                  steps_per_iter=128,
                  epochs_per_iter=10,
@@ -57,7 +58,7 @@ class PPO(Trainer):
         self.norm_advantages = norm_advantages
         self.eval_nepisodes = eval_nepisodes
 
-        self.net = self._make_policy(self.env.observation_space.shape, self.env.action_space)
+        self.net = policy(self.env.observation_space.shape, self.env.action_space,  norm_observations=norm_observations)
         self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         self.net.to(self.device)
         self.opt = optimizer(self.net.parameters())
@@ -92,9 +93,6 @@ class PPO(Trainer):
         else:
             env = DummyVecEnv([_env(0)])
         return VecMonitor(env, max_history=100)
-
-    def _make_policy(self, ob_shape, action_space):
-        return Policy(ob_shape, action_space, norm_observations=self.norm_observations)
 
     def state_dict(self):
         return {

@@ -16,6 +16,7 @@ class QLearning(Trainer):
                  logdir,
                  env_fn,
                  optimizer,
+                 qfunction=QFunction,
                  gamma=0.99,
                  batch_size=32,
                  update_period=4,
@@ -59,8 +60,8 @@ class QLearning(Trainer):
 
         s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        self.net = self._make_qfunction(ob_shape, self.env.action_space)
-        self.target_net = self._make_qfunction(ob_shape, self.env.action_space)
+        self.net = qfunction(ob_shape, self.env.action_space)
+        self.target_net = qfunction(ob_shape, self.env.action_space)
         self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         self.net.to(self.device)
         self.target_net.to(self.device)
@@ -73,9 +74,6 @@ class QLearning(Trainer):
         self.losses = []
 
         self._reset()
-
-    def _make_qfunction(self, ob_shape, action_space):
-        return QFunction(ob_shape, action_space)
 
     def _reset(self):
         self.buffer.env_reset()
