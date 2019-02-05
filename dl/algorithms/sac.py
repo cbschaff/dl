@@ -283,6 +283,7 @@ class SAC(Trainer):
 
     def evaluate(self):
         self.pi.train(False)
+        eval_env = self.env
         if self.frame_stack > 1:
             eval_env = FrameStack(self.env, self.frame_stack)
 
