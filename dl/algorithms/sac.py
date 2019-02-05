@@ -223,11 +223,11 @@ class SAC(Trainer):
                 pi_targ = q - v
                 pi_loss = (pi_out.logp * (alpha * pi_out.logp - pi_targ).detach()).mean()
 
-            self.losses['pi'].append(pi_loss.detach())
-        self.losses['qf1'].append(qf1_loss.detach())
-        self.losses['qf2'].append(qf2_loss.detach())
-        self.losses['vf'].append(vf_loss.detach())
-        self.losses['alpha'].append(alpha_loss.detach())
+            self.losses['pi'].append(pi_loss.detach().cpu().numpy())
+        self.losses['qf1'].append(qf1_loss.detach().cpu().numpy())
+        self.losses['qf2'].append(qf2_loss.detach().cpu().numpy())
+        self.losses['vf'].append(vf_loss.detach().cpu().numpy())
+        self.losses['alpha'].append(alpha_loss.detach().cpu().numpy())
         return pi_loss, qf1_loss, qf2_loss, vf_loss
 
 
