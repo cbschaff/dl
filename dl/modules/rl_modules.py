@@ -315,7 +315,7 @@ class FeedForwardBase(nn.Module):
         self.net = FeedForwardNet(ob_shape[0], *args, **kwargs)
 
     def forward(self, x):
-        return self.net(x)
+        return self.net(x.float())
 
 
 @gin.configurable
@@ -325,7 +325,7 @@ class AppendActionFeedForwardBase(nn.Module):
         self.net = FeedForwardNet(ob_shape[0] + ac_shape[0], *args, **kwargs)
 
     def forward(self, x, a):
-        return self.net(torch.cat([x,a.float()], -1))
+        return self.net(torch.cat([x.float(), a.float()], -1))
 
 
 def get_default_base(obs_shape, ac_shape=None):
