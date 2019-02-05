@@ -84,6 +84,7 @@ class SAC(Trainer):
         self.qf1.to(self.device)
         self.qf2.to(self.device)
         self.vf.to(self.device)
+        self.target_vf.to(self.device)
 
         self.opt_pi = optimizer(self.pi.parameters(), lr=policy_lr)
         self.opt_qf1 = optimizer(self.qf1.parameters(), lr=qf_lr)
