@@ -95,6 +95,7 @@ class TestDistributions(unittest.TestCase):
         features = torch.ones(2,10)
         dist = cat(features)
         ac = dist.sample()
+        assert ac.requires_grad == False
         assert ac.shape == (2, 1)
         assert torch.all(dist.mode()[0] == dist.mode()[1])
         assert dist.mode().shape == (2, 1)
@@ -106,11 +107,15 @@ class TestDistributions(unittest.TestCase):
         features = torch.ones(2,10)
         dist = dg(features)
         ac = dist.sample()
+        assert ac.requires_grad == False
         assert ac.shape == (2, 2)
         assert torch.all(dist.mode()[0] == dist.mode()[1])
         assert dist.mode().shape == (2, 2)
         assert dist.log_prob(ac).shape == (2,)
         assert dist.entropy().shape == (2,)
+
+        ac = dist.rsample()
+        assert ac.requires_grad == True
 
 
 if __name__ == '__main__':

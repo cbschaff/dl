@@ -113,12 +113,12 @@ class QLearning(Trainer):
     def act(self):
         idx = self.buffer.store_frame(self._ob)
         if self.eps_schedule.value(self.t) > np.random.rand():
-            ac = self.env.action_space.sample()
+            ac = np.array(self.env.action_space.sample())
         else:
             x = self.buffer.encode_recent_observation()
             with torch.no_grad():
                 x = torch.from_numpy(x).to(self.device)
-                ac = self.net(x[None]).action.cpu().numpy()
+                ac = self.net(x[None]).action.cpu().numpy()[0]
         self._ob, r, done, _ = self.env.step(ac)
         self.buffer.store_effect(idx, ac, r, done)
         if done:

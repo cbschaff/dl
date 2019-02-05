@@ -46,12 +46,16 @@ class ReplayBuffer(object):
         self.num_in_buffer = 0
 
         self.obs      = None
+        self.action   = None
 
-    def _init_replay_data(self, frame_shape):
-        self.obs      = np.empty([self.size] + list(frame_shape), dtype=np.uint8)
-        self.action   = np.empty([self.size],                     dtype=np.int32)
-        self.reward   = np.empty([self.size],                     dtype=np.float32)
-        self.done     = np.empty([self.size],                     dtype=np.bool)
+    def _init_obs_data(self, frame):
+        dtype = np.float32 if frame.dtype == np.float64 else frame.dtype
+        self.obs      = np.empty([self.size] + list(frame.shape), dtype=dtype)
+
+    def _init_replay_data(self, action_shape):
+        self.action   = np.empty([self.size] + list(action_shape), dtype=np.int32)
+        self.reward   = np.empty([self.size],                      dtype=np.float32)
+        self.done     = np.empty([self.size],                      dtype=np.bool)
 
     def can_sample(self, batch_size):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
@@ -115,10 +119,6 @@ class ReplayBuffer(object):
     def _encode_observation(self, idx):
         end_idx   = idx + 1 # make noninclusive
         start_idx = end_idx - self.frame_history_len
-        # this checks if we are using low-dimensional observations, such as RAM
-        # state, in which case we just directly return the latest RAM.
-        if len(self.obs.shape) == 2:
-            return self.obs[end_idx-1]
         # if there weren't enough frames ever in the buffer for context
         if start_idx < 0 and self.num_in_buffer != self.size:
             start_idx = 0
@@ -135,8 +135,8 @@ class ReplayBuffer(object):
             return np.concatenate(frames, 0)
         else:
             # this optimization has potential to saves about 30% compute time \o/
-            img_h, img_w = self.obs.shape[2], self.obs.shape[3]
-            return self.obs[start_idx:end_idx].reshape(-1, img_h, img_w)
+            s = self.obs.shape[2:]
+            return self.obs[start_idx:end_idx].reshape(-1, *s)
 
     def store_frame(self, frame):
         """Store a single frame in the buffer at the next available index, overwriting
@@ -151,7 +151,7 @@ class ReplayBuffer(object):
             Index at which the frame is stored. To be used for `store_effect` later.
         """
         if self.obs is None:
-            self._init_replay_data(frame.shape)
+            self._init_obs_data(frame)
 
         self.obs[self.next_idx] = frame
 
@@ -177,6 +177,8 @@ class ReplayBuffer(object):
         done: bool
             True if episode was finished after performing that action.
         """
+        if self.action is None:
+            self._init_replay_data(action.shape)
         self.action[idx] = action
         self.reward[idx] = reward
         self.done[idx]   = done

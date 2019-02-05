@@ -3,7 +3,7 @@ import numpy as np
 from imageio import imwrite
 import shutil
 import subprocess as sp
-from dl.util import find_monitor
+from dl.util import find_monitor, logger
 import torch
 from dl.eval.rl_plot import plot_results
 import matplotlib.pyplot as plt
@@ -42,10 +42,6 @@ def rl_evaluate(env, actor, nepisodes, outfile, device='cpu'):
         json.dump(outs, f)
 
 def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
-    # try:
-    #     sp.check_call(['ffmpeg','-h'])
-    # except:
-    #     assert False, "Please install ffmpeg to record videos."
     tmpdir = os.path.join(tempfile.gettempdir(), 'video_' + str(time.monotonic()))
     os.makedirs(tmpdir)
     monitor = find_monitor(env)
@@ -54,7 +50,11 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         ob = env.reset()
         done = False
         while not done:
-            rgb = env.render('rgb_array')
+            try:
+                rgb = env.render('rgb_array')
+            except:
+                logger.log("Error while rendering.")
+                return
             imwrite(os.path.join(tmpdir, '{:05d}.png'.format(id)), rgb)
             id += 1
 

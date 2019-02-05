@@ -152,7 +152,11 @@ class QFunction(nn.Module):
             x = self.base(x)
             qvals = self.qvals(x)
             maxq, maxa = qvals.max(dim=-1)
-            value = qvals.gather(1, action.long().unsqueeze(1)).squeeze(1)
+            if len(action.shape) == 1:
+                inds = action.long().unsqueeze(1)
+            else:
+                inds = action.long()
+            value = qvals.gather(1, inds).squeeze(1)
             return self.outputs(action=action, value=value, max_a=maxa, max_q=maxq, qvals=qvals)
         else:
             x = self.base(x, action)
@@ -231,7 +235,7 @@ class Policy(nn.Module):
             vf_out = None
         return out, vf_out, state_out
 
-    def forward(self, X, mask=None, state_in=None, deterministic=False):
+    def forward(self, X, mask=None, state_in=None, deterministic=False, reparameterization_trick=False):
         """
         Computes the action of the policy and the value of the input.
         Args:
@@ -254,7 +258,13 @@ class Policy(nn.Module):
         if deterministic:
             action = dist.mode()
         else:
-            action = dist.sample()
+            if reparameterization_trick:
+                try:
+                    action = dist.rsample()
+                except:
+                    assert False, f"{dist.__class__.__name__} distribution does not have a reparameterization trick."
+            else:
+                action = dist.sample()
 
         if self.critic:
             value = self.vf(vf_out).squeeze(-1)
@@ -295,10 +305,16 @@ class NatureDQN(nn.Module):
         x = F.relu(self.conv3(x))
         return F.relu(self.fc(x.view(-1, self.nunits)))
 
+class AppendActionFeedForwardNet(FeedForwardNet):
+    def forward(self, x, a):
+        return super().forward(torch.cat([x,a.float()], -1))
 
-def get_default_base(obs_shape):
+def get_default_base(obs_shape, ac_shape=None):
+    if ac_shape:
+        assert len(obs_shape) == 1, "Default base for continuous action spaces requires one dimensional observations."
+        return AppendActionFeedForwardNet(obs_shape[0] + ac_shape[0], units=[64,64], activation_fn=torch.tanh, activate_last=True)
     if len(obs_shape) == 1:
-        return FeedForwardNet(obs_shape[0], units=[64,64,64], activation_fn=F.tanh, activate_last=True)
+        return FeedForwardNet(obs_shape[0], units=[64,64], activation_fn=torch.tanh, activate_last=True)
     if len(obs_shape) == 3:
         return NatureDQN(obs_shape)
     assert False, f"No default network for inputs of {len(obs_shape)} dimensions"
