@@ -282,6 +282,7 @@ class Policy(nn.Module):
 
 from dl.util import conv_out_shape
 
+@gin.configurable
 class NatureDQN(nn.Module):
     """
     Deep network from https://www.nature.com/articles/nature14236
@@ -305,16 +306,34 @@ class NatureDQN(nn.Module):
         x = F.relu(self.conv3(x))
         return F.relu(self.fc(x.view(-1, self.nunits)))
 
-class AppendActionFeedForwardNet(FeedForwardNet):
+
+
+@gin.configurable
+class FeedForwardBase(nn.Module):
+    def __init__(self, ob_shape, *args, **kwargs):
+        super().__init__()
+        self.net = FeedForwardNet(ob_shape[0], *args, **kwargs)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+@gin.configurable
+class AppendActionFeedForwardBase(nn.Module):
+    def __init__(self, ob_shape, ac_shape, *args, **kwargs):
+        super().__init__()
+        self.net = FeedForwardNet(ob_shape[0] + ac_shape[0], *args, **kwargs)
+
     def forward(self, x, a):
-        return super().forward(torch.cat([x,a.float()], -1))
+        return self.net(torch.cat([x,a.float()], -1))
+
 
 def get_default_base(obs_shape, ac_shape=None):
     if ac_shape:
         assert len(obs_shape) == 1, "Default base for continuous action spaces requires one dimensional observations."
-        return AppendActionFeedForwardNet(obs_shape[0] + ac_shape[0], units=[64,64], activation_fn=torch.tanh, activate_last=True)
+        return AppendActionFeedForwardBase(obs_shape, ac_shape, units=[64,64], activation_fn=torch.tanh, activate_last=True)
     if len(obs_shape) == 1:
-        return FeedForwardNet(obs_shape[0], units=[64,64], activation_fn=torch.tanh, activate_last=True)
+        return FeedForwardBase(obs_shape, units=[64,64], activation_fn=torch.tanh, activate_last=True)
     if len(obs_shape) == 3:
         return NatureDQN(obs_shape)
     assert False, f"No default network for inputs of {len(obs_shape)} dimensions"

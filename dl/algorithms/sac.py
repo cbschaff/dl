@@ -310,14 +310,11 @@ class SAC(Trainer):
 import unittest, shutil, gym
 from dl.util import atari_env, load_gin_configs, Monitor
 
-def env_fn(rank=0):
-    return Monitor(gym.make("MountainCarContinuous-v0"), logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-
 class TestSAC(unittest.TestCase):
     def test_sac(self):
-        sac = SAC('logs', env_fn, learning_starts=100, eval_nepisodes=1, target_update_period=100, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
+        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, target_update_period=100, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
         sac.train()
-        sac = SAC('logs', env_fn, learning_starts=100, eval_nepisodes=1, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
+        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
         sac.train() # loads checkpoint
         assert sac.buffer.num_in_buffer == 1000
         shutil.rmtree('logs')

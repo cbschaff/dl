@@ -1,18 +1,19 @@
-# Hyperparameters from Minh et al. 2015: https://www.nature.com/articles/nature14236
+# Hyperparameters from Soft Actor Critic: https://arxiv.org/abs/1812.05905
 import dl.util.gin_torch_externals
 import dl.trainer
 import dl.util
+import dl.modules
 
 optim.Adam.betas = (0.9, 0.999)
 
-SAC.env_fn = @atari_env
+SAC.env_fn = @make_env
 SAC.optimizer = @optim.Adam
 SAC.policy_lr = 3e-4
 SAC.qf_lr = 3e-4
 SAC.vf_lr = 3e-4
 SAC.gamma = 0.99
-SAC.batch_size = 32
-SAC.frame_stack = 4
+SAC.batch_size = 256
+SAC.frame_stack = 1
 SAC.eval_nepisodes = 100
 SAC.update_period = 1
 SAC.target_update_period = 1
@@ -34,10 +35,12 @@ Trainer.save_period = 1000000
 Checkpointer.min_ckpt_period = 10000000
 Checkpointer.max_ckpts_to_keep = 1
 
-atari_env.game_name = "Pong"
-atari_env.sticky_actions = False
-atari_env.noop = True
-atari_env.seed = 0
-atari_env.frameskip = 4
-atari_env.episode_life = True
-atari_env.clip_rewards = True
+make_env.env_id = "MountainCarContinuous-v0"
+
+Policy.base        = @FeedForwardBase
+ValueFunction.base = @FeedForwardBase
+QFunction.base     = @AppendActionFeedForwardBase
+
+FeedForwardNet.units = (256, 256)
+FeedForwardNet.activation_fn = @F.relu
+FeedForwardNet.activate_last = True

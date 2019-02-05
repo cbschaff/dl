@@ -106,6 +106,9 @@ def atari_env(game_name, seed=0, rank=0, sticky_actions=False, timelimit=True, n
         env = FrameStack(env, frame_stack)
     return env
 
+@gin.configurable(blacklist=['rank'])
+def make_env(env_id, rank=0):
+    return Monitor(gym.make(env_id), logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
 
 
 import unittest
