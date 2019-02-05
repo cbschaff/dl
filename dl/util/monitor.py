@@ -44,7 +44,7 @@ class Monitor(bench.Monitor):
     Changing baselines.bench.Monitor to append to an existing log file.
     This allows for easier starting and stopping of experiments.
     """
-    def __init__(self, env, filename, allow_early_resets=False, reset_keywords=(), info_keywords=()):
+    def __init__(self, env, filename, allow_early_resets=True, reset_keywords=(), info_keywords=()):
         Wrapper.__init__(self, env=env)
         self.results_writer = AppendResultsWriter(
             filename,

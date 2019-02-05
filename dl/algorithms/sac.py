@@ -308,10 +308,10 @@ class SAC(Trainer):
 
 
 import unittest, shutil, gym
-from dl.util import atari_env, load_gin_configs
+from dl.util import atari_env, load_gin_configs, Monitor
 
 def env_fn(rank=0):
-    return gym.make("MountainCarContinuous-v0")
+    return Monitor(gym.make("MountainCarContinuous-v0"), logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
 
 class TestSAC(unittest.TestCase):
     def test_sac(self):
