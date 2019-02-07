@@ -97,7 +97,7 @@ class DiagGaussian(nn.Module):
             return Normal(mean, self.logstd.exp())
         else:
             logstd = self.fc_logstd(x)
-            return Normal(mean, logstd.exp())
+            return Normal(mean, logstd.exp() + 1e-5)
 
 
 
