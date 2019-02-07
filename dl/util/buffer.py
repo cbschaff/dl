@@ -52,8 +52,8 @@ class ReplayBuffer(object):
         dtype = np.float32 if frame.dtype == np.float64 else frame.dtype
         self.obs      = np.empty([self.size] + list(frame.shape), dtype=dtype)
 
-    def _init_replay_data(self, action_shape):
-        self.action   = np.empty([self.size] + list(action_shape), dtype=np.int32)
+    def _init_replay_data(self, action_shape, action_dtype):
+        self.action   = np.empty([self.size] + list(action_shape), dtype=action_dtype)
         self.reward   = np.empty([self.size],                      dtype=np.float32)
         self.done     = np.empty([self.size],                      dtype=np.bool)
 
@@ -178,7 +178,7 @@ class ReplayBuffer(object):
             True if episode was finished after performing that action.
         """
         if self.action is None:
-            self._init_replay_data(action.shape)
+            self._init_replay_data(action.shape, action.dtype)
         self.action[idx] = action
         self.reward[idx] = reward
         self.done[idx]   = done
