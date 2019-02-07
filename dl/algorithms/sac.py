@@ -204,6 +204,8 @@ class SAC(Trainer):
         # qf loss
         vtarg = self.target_vf(next_ob).value
         qtarg = self.reward_scale * rew + (1.0 - done) * self.gamma * vtarg
+        assert qtarg.shape == q1.shape
+        assert qtarg.shape == q2.shape
         qf1_loss = self.qf_criterion(q1, qtarg.detach())
         qf2_loss = self.qf_criterion(q2, qtarg.detach())
 
@@ -212,15 +214,18 @@ class SAC(Trainer):
         q2_new = self.qf2(ob, pi_out.action).value
         q = torch.min(q1_new, q2_new)
         vtarg = q - alpha * pi_out.logp
+        assert v.shape == vtarg.shape
         vf_loss = self.vf_criterion(v, vtarg.detach())
 
         # pi loss
         pi_loss = None
         if self.t % self.policy_update_period == 0:
             if self.rsample:
+                assert q.shape == pi_out.logp.shape
                 pi_loss = (alpha*pi_out.logp - q).mean()
             else:
                 pi_targ = q - v
+                assert pi_targ.shape == pi_out.logp.shape
                 pi_loss = (pi_out.logp * (alpha * pi_out.logp - pi_targ).detach()).mean()
 
             self.losses['pi'].append(pi_loss.detach().cpu().numpy())
