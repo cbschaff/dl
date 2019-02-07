@@ -123,7 +123,7 @@ class QFunction(nn.Module):
             with torch.no_grad():
                 ac = torch.from_numpy(np.array([self.action_space.sample()]))
                 in_shape = self.base(torch.zeros(obs_shape)[None], ac).shape[-1]
-            self.qvals = nn.Linear(in_shape, np.prod(self.action_space.shape).item())
+            self.qvals = nn.Linear(in_shape, 1)
         nn.init.orthogonal_(self.qvals.weight.data, gain=1.0)
         nn.init.constant_(self.qvals.bias.data, 0)
 
