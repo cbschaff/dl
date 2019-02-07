@@ -65,7 +65,7 @@ class DiagGaussian(nn.Module):
     of the features. logstd is torch.Parameter by default, but can also be a
     linear function of the features.
     """
-    def __init__(self, nin, nout, constant_log_std=True):
+    def __init__(self, nin, nout, constant_log_std=True, log_std_min=-20, log_std_max=2):
         """
         Args:
             nin  (int): dimensionality of the input
@@ -74,6 +74,8 @@ class DiagGaussian(nn.Module):
         """
         super().__init__()
         self.constant_log_std = constant_log_std
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
 
         self.fc_mean = nn.Linear(nin, nout)
         nn.init.orthogonal_(self.fc_mean.weight.data, gain=1.0)
@@ -94,10 +96,10 @@ class DiagGaussian(nn.Module):
         """
         mean = self.fc_mean(x)
         if self.constant_log_std:
-            return Normal(mean, self.logstd.exp())
+            logstd = torch.clamp(self.logstd, self.log_std_min, self.log_std_max)
         else:
-            logstd = self.fc_logstd(x)
-            return Normal(mean, logstd.exp() + 1e-5)
+            logstd = torch.clamp(self.fc_logstd(x), self.log_std_min, self.log_std_max)
+        return Normal(mean, logstd.exp())
 
 
 
