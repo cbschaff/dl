@@ -257,14 +257,13 @@ class Policy(nn.Module):
         dist = self.dist(out)
         if deterministic:
             action = dist.mode()
+        elif reparameterization_trick:
+            try:
+                action = dist.rsample()
+            except:
+                assert False, f"{dist.__class__.__name__} distribution does not have a reparameterization trick."
         else:
-            if reparameterization_trick:
-                try:
-                    action = dist.rsample()
-                except:
-                    assert False, f"{dist.__class__.__name__} distribution does not have a reparameterization trick."
-            else:
-                action = dist.sample()
+            action = dist.sample()
 
         if self.critic:
             value = self.vf(vf_out).squeeze(-1)

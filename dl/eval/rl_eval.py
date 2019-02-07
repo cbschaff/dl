@@ -20,7 +20,7 @@ def rl_evaluate(env, actor, nepisodes, outfile, device='cpu'):
         ep_rewards.append(0)
         while not done:
             ob = torch.from_numpy(ob).to(device)[None]
-            action = actor(ob).action.cpu()
+            action = actor(ob).action.cpu().numpy()
             ob, r, done, _ = env.step(action)
             if monitor is None:
                 ep_lengths[-1] += 1
@@ -59,7 +59,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
             id += 1
 
             ob = torch.from_numpy(ob).to(device)[None]
-            action = actor(ob).action.cpu()
+            action = actor(ob).action.cpu().numpy()
             ob, r, done, _ = env.step(action)
             if monitor:
                 done = monitor.needs_reset
