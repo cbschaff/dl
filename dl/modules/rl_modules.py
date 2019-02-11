@@ -169,7 +169,7 @@ class QFunction(nn.Module):
 
 @gin.configurable(whitelist=['base', 'critic_base'])
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, critic=True, critic_base=None, norm_observations=False):
+    def __init__(self, obs_shape, action_space, base=None, critic=True, critic_base=None, norm_observations=False, dist=None):
         """
         Args:
             obs_shape (tuple):         See above
@@ -183,6 +183,8 @@ class Policy(nn.Module):
                     If specified, critic_base is assumed to be not recurrent.
             running_ob_norm (bool):
                     If True, normalize observations passed to forward.
+            dist (nn.Module):
+                    If specified, overrides the default distribution.
         """
         super().__init__()
         if base:
@@ -200,11 +202,14 @@ class Policy(nn.Module):
 
         # init distribution
         if self.action_space.__class__.__name__ == 'Discrete':
-            self.dist = Categorical(in_shape, self.action_space.n)
+            args = [in_shape, self.action_space.n]
+            defualt_dist = Categorical
         elif self.action_space.__class__.__name__ == 'Box':
-            self.dist = DiagGaussian(in_shape, np.prod(self.action_space.shape).item())
+            args = [in_shape, np.prod(self.action_space.shape).item()]
+            defualt_dist = DiagGaussian
         else:
             assert False, f"Uknown action space {self.action_space.__class__.__name__}"
+        self.dist = dist(*args) if dist else defualt_dist(*args)
 
         # init value function haed
         if critic:
@@ -420,6 +425,17 @@ class TestRLModules(unittest.TestCase):
             assert outs.action.shape == (1,*env.action_space.shape)
             assert outs.value.shape == (1,)
             assert outs.state_out is None
+            ob, r, done, _ = env.step(outs.action[0])
+
+        net = Policy(env.observation_space.shape, env.action_space, dist=TanhDiagGaussian)
+        ob = env.reset()
+        for _ in range(10):
+            outs = net(torch.from_numpy(ob[None]).float())
+            assert outs.action.shape == (1,*env.action_space.shape)
+            assert outs.value.shape == (1,)
+            assert outs.state_out is None
+            assert outs.dist.__class__.__name__ == 'TanhNormal'
+            assert torch.abs(outs.action) < 1
             ob, r, done, _ = env.step(outs.action[0])
 
 

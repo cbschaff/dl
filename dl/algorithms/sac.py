@@ -4,7 +4,7 @@ https://arxiv.org/abs/1801.01290
 https://arxiv.org/abs/1812.05905
 """
 from dl import Trainer
-from dl.modules import Policy, QFunction, ValueFunction
+from dl.modules import Policy, QFunction, ValueFunction, TanhDiagGaussian
 from dl.util import ReplayBuffer
 from dl.util import logger, find_monitor, FrameStack
 from dl.eval import rl_evaluate, rl_record, rl_plot
@@ -77,7 +77,7 @@ class SAC(Trainer):
 
         s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=self.norm_obs)
+        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=self.norm_obs, dist=TanhDiagGaussian)
         self.qf1 = qf(ob_shape, self.env.action_space)
         self.qf2 = qf(ob_shape, self.env.action_space)
         self.vf = vf(ob_shape)
@@ -201,6 +201,11 @@ class SAC(Trainer):
         ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
 
         pi_out = self.pi(ob, reparameterization_trick=self.rsample)
+        if self.rsample:
+            new_ac, new_pth_ac = pi_out.dist.rsample(return_pretanh_value=True)
+        else:
+            new_ac, new_pth_ac = pi_out.dist.sample(return_pretanh_value=True)
+        logp = pi_out.dist.log_prob(new_ac, new_pth_ac)
         if self.norm_obs:
             ob = self.pi.running_norm(ob)
         q1 = self.qf1(ob, ac).value
@@ -209,7 +214,7 @@ class SAC(Trainer):
 
         # alpha loss
         if self.automatic_entropy_tuning:
-            alpha_loss = -(self.log_alpha * (pi_out.logp + self.target_entropy).detach()).mean()
+            alpha_loss = -(self.log_alpha * (logp + self.target_entropy).detach()).mean()
             self.opt_alpha.zero_grad()
             alpha_loss.backward()
             self.opt_alpha.step()
@@ -227,10 +232,10 @@ class SAC(Trainer):
         qf2_loss = self.qf_criterion(q2, qtarg.detach())
 
         # vf loss
-        q1_new = self.qf1(ob, pi_out.action).value
-        q2_new = self.qf2(ob, pi_out.action).value
+        q1_new = self.qf1(ob, new_ac).value
+        q2_new = self.qf2(ob, new_ac).value
         q = torch.min(q1_new, q2_new)
-        vtarg = q - alpha * pi_out.logp
+        vtarg = q - alpha * logp
         assert v.shape == vtarg.shape
         vf_loss = self.vf_criterion(v, vtarg.detach())
 
@@ -238,15 +243,15 @@ class SAC(Trainer):
         pi_loss = None
         if self.t % self.policy_update_period == 0:
             if self.rsample:
-                assert q.shape == pi_out.logp.shape
-                pi_loss = (alpha*pi_out.logp - q).mean()
+                assert q.shape == logp.shape
+                pi_loss = (alpha*logp - q).mean()
             else:
                 pi_targ = q - v
-                assert pi_targ.shape == pi_out.logp.shape
-                pi_loss = (pi_out.logp * (alpha * pi_out.logp - pi_targ).detach()).mean()
+                assert pi_targ.shape == logp.shape
+                pi_loss = (logp * (alpha * logp - pi_targ).detach()).mean()
 
             if self.env.action_space.__class__.__name__ == 'Box': # continuous action space.
-                pi_loss += self.policy_mean_reg_weight * (pi_out.dist.mean**2).mean()
+                pi_loss += self.policy_mean_reg_weight * (pi_out.dist.normal.mean**2).mean()
                 pi_loss += self.policy_std_reg_weight * (pi_out.logstd**2).mean()
 
             self.losses['pi'].append(pi_loss.detach().cpu().numpy())
