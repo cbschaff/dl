@@ -219,7 +219,7 @@ class Policy(nn.Module):
         else:
             self.running_norm = None
 
-        self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'dist', 'state_out'])
+        self.outputs = namedtuple('Outputs', ['action', 'value', 'logp', 'logstd', 'dist', 'state_out'])
 
     def _run_bases(self, x, mask, state_in):
         if state_in is None:
@@ -247,6 +247,7 @@ class Policy(nn.Module):
                 out.action: The sampled action, or the mode if deterministic=True
                 out.value:  The value of the current observation
                 out.logp:   The log probability of out.action
+                out.logstd: The log std deviation of out.dist
                 out.dist:   The action distribution
                 out.state_out:  The temporal state of base (See above for details)
         """
@@ -254,7 +255,11 @@ class Policy(nn.Module):
             X = self.running_norm(X)
         out, vf_out, state_out = self._run_bases(X, mask, state_in)
 
-        dist = self.dist(out)
+        if isinstance(self.dist, DiagGaussian):
+            dist, logstd = self.dist(out, return_logstd=True)
+        else:
+            dist = self.dist(out)
+            logstd = None
         if deterministic:
             action = dist.mode()
         elif reparameterization_trick:
@@ -270,7 +275,7 @@ class Policy(nn.Module):
         else:
             value = None
 
-        return self.outputs(value=value, action=action, logp=dist.log_prob(action), dist=dist, state_out=state_out)
+        return self.outputs(value=value, action=action, logp=dist.log_prob(action), logstd=logstd, dist=dist, state_out=state_out)
 
     def recurrent_state_size(self):
         if not hasattr(self.base, 'recurrent_state_size'):

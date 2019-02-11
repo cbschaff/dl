@@ -24,6 +24,10 @@ def soft_target_update(target_net, net, tau):
 
 
 
+"""
+TODO:
+ - add observation normalization
+"""
 @gin.configurable(blacklist=['logdir'])
 class SAC(Trainer):
     def __init__(self,
@@ -36,6 +40,8 @@ class SAC(Trainer):
                  policy_lr=1e-3,
                  qf_lr=1e-3,
                  vf_lr=1e-3,
+                 policy_mean_reg_weight=1e-3,
+                 policy_std_reg_weight=1e-3,
                  gamma=0.99,
                  batch_size=256,
                  update_period=1,
@@ -90,6 +96,8 @@ class SAC(Trainer):
         self.opt_qf1 = optimizer(self.qf1.parameters(), lr=qf_lr)
         self.opt_qf2 = optimizer(self.qf2.parameters(), lr=qf_lr)
         self.opt_vf = optimizer(self.vf.parameters(), lr=vf_lr)
+        self.policy_mean_reg_weight = policy_mean_reg_weight
+        self.policy_std_reg_weight = policy_std_reg_weight
 
         self.target_vf.load_state_dict(self.vf.state_dict())
 
@@ -222,6 +230,10 @@ class SAC(Trainer):
             else:
                 pi_targ = q - v
                 pi_loss = (pi_out.logp * (alpha * pi_out.logp - pi_targ).detach()).mean()
+
+            if self.env.action_space.__class__.__name__ == 'Box': # continuous action space.
+                pi_loss += self.policy_mean_reg_weight * (pi_out.dist.mean**2).mean()
+                pi_loss += self.policy_std_reg_weight * (pi_out.logstd**2).mean()
 
             self.losses['pi'].append(pi_loss.detach().cpu().numpy())
         self.losses['qf1'].append(qf1_loss.detach().cpu().numpy())

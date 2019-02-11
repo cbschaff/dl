@@ -87,7 +87,7 @@ class DiagGaussian(nn.Module):
             nn.init.orthogonal_(self.fc_logstd.weight.data, gain=0.01)
             nn.init.constant_(self.fc_logstd.bias.data, 0)
 
-    def forward(self, x):
+    def forward(self, x, return_logstd=False):
         """
         Args:
             x (torch.Tensor): vectors of length nin
@@ -99,7 +99,10 @@ class DiagGaussian(nn.Module):
             logstd = torch.clamp(self.logstd, self.log_std_min, self.log_std_max)
         else:
             logstd = torch.clamp(self.fc_logstd(x), self.log_std_min, self.log_std_max)
-        return Normal(mean, logstd.exp())
+        if return_logstd:
+            return Normal(mean, logstd.exp()), logstd
+        else:
+            return Normal(mean, logstd.exp())
 
 
 
@@ -152,6 +155,8 @@ class TestDistributions(unittest.TestCase):
         dist = dg(features)
         assert not torch.allclose(dist.entropy(), ent)
 
+        dist, logstd = dg(features, return_logstd=True)
+        assert torch.allclose(logstd, torch.zeros([1]))
 
 
 
