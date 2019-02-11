@@ -24,10 +24,6 @@ def soft_target_update(target_net, net, tau):
 
 
 
-"""
-TODO:
- - add observation normalization
-"""
 @gin.configurable(blacklist=['logdir'])
 class SAC(Trainer):
     def __init__(self,
@@ -53,6 +49,7 @@ class SAC(Trainer):
                  target_smoothing_coef=0.005,
                  automatic_entropy_tuning=True,
                  reparameterization_trick=True,
+                 normalize_observations=True,
                  target_entropy=None,
                  reward_scale=1,
                  buffer=ReplayBuffer,
@@ -73,13 +70,14 @@ class SAC(Trainer):
         self.rsample = reparameterization_trick
         self.reward_scale = reward_scale
         self.target_smoothing_coef = target_smoothing_coef
+        self.norm_obs = normalize_observations
         self.eval_nepisodes = eval_nepisodes
         self.log_period = log_period
         self.buffer = buffer(buffer_size, frame_stack)
 
         s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=False)
+        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=self.norm_obs)
         self.qf1 = qf(ob_shape, self.env.action_space)
         self.qf2 = qf(ob_shape, self.env.action_space)
         self.vf = vf(ob_shape)
@@ -189,11 +187,22 @@ class SAC(Trainer):
         if done:
             self._ob = self.env.reset()
         self.t += 1
+        if self.norm_obs and self.t % 128 == 0:
+            idx = self.buffer.next_idx
+            if idx >= 128:
+                obs = self.buffer.obs[idx-128:idx]
+            else:
+                obs = np.concatenate([self.buffer.obs[-(128-idx):], self.buffer.obs[:idx]], 0)
+            batch_mean = torch.from_numpy(np.mean(obs, axis=0)).to(self.device)
+            batch_var  = torch.from_numpy(np.var(obs, axis=0)).to(self.device)
+            self.pi.running_norm.update(batch_mean, batch_var, 128)
 
     def loss(self, batch):
         ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
 
         pi_out = self.pi(ob, reparameterization_trick=self.rsample)
+        if self.norm_obs:
+            ob = self.pi.running_norm(ob)
         q1 = self.qf1(ob, ac).value
         q2 = self.qf2(ob, ac).value
         v  = self.vf(ob).value
@@ -331,11 +340,11 @@ from dl.util import atari_env, load_gin_configs, Monitor
 
 class TestSAC(unittest.TestCase):
     def test_sac(self):
-        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, target_update_period=100, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
+        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, buffer_size=500, target_update_period=100, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
         sac.train()
-        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
+        sac = SAC('logs', learning_starts=300, eval_nepisodes=1, buffer_size=500, maxt=1000, eval=False, eval_period=1000, reparameterization_trick=False)
         sac.train() # loads checkpoint
-        assert sac.buffer.num_in_buffer == 1000
+        assert sac.buffer.num_in_buffer == 500
         shutil.rmtree('logs')
 
 
