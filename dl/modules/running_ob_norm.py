@@ -16,6 +16,8 @@ class RunningObNorm(nn.Module):
         self.std = torch.sqrt(self.var)
 
     def forward(self, ob):
+        if self.std.device != self.mean.device:
+            self.std = self.std.to(self.mean.device)
         return (ob.float() - self.mean) / (self.std + self.eps)
 
     def update(self, batch_mean, batch_var, batch_count):
