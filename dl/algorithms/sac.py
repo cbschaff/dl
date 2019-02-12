@@ -71,7 +71,11 @@ class SAC(Trainer):
 
         s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=self.norm_obs, dist=TanhDiagGaussian)
+        if self.env.action_space.__class__.__name__ == 'Box':
+            dist = TanhDiagGaussian
+        else:
+            dist = None
+        self.pi  = policy(ob_shape, self.env.action_space,  norm_observations=self.norm_obs, dist=dist)
         self.qf1 = qf(ob_shape, self.env.action_space)
         self.qf2 = qf(ob_shape, self.env.action_space)
         self.vf = vf(ob_shape)
@@ -178,7 +182,7 @@ class SAC(Trainer):
         with torch.no_grad():
             x = torch.from_numpy(x).to(self.device)
             ac = self.pi(x[None]).action.cpu().numpy()[0]
-        self._ob, r, done, _ = self.env.step(ac)
+        self._ob, r, done, _ = self.env.step(self._unnorm_action(ac))
         self.buffer.store_effect(idx, ac, r, done)
         if done:
             self._ob = self.env.reset()
@@ -192,6 +196,14 @@ class SAC(Trainer):
             batch_mean = torch.from_numpy(np.mean(obs, axis=0)).to(self.device)
             batch_var  = torch.from_numpy(np.var(obs, axis=0)).to(self.device)
             self.pi.running_norm.update(batch_mean, batch_var, 128)
+
+    def _unnorm_action(self, ac):
+        if self.env.action_space.__class__.__name__ == 'Box':
+            l = self.env.action_space.low
+            h = self.env.action_space.high
+            if l is not None and h is not None:
+                ac = l + 0.5 * (ac + 1) * (h - l)
+        return ac
 
     def loss(self, batch):
         ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
