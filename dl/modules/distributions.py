@@ -88,7 +88,7 @@ class TanhNormal(D.Distribution):
 
     def entropy(self):
         # TODO: implement this.
-        return torch.zeros([])
+        return torch.zeros([self.normal.mean.shape[0]])
 
 
 
