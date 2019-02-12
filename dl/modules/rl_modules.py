@@ -167,7 +167,7 @@ class QFunction(nn.Module):
 
 
 
-@gin.configurable(whitelist=['base', 'critic_base'])
+@gin.configurable(blacklist=['obs_shape', 'action_space'])
 class Policy(nn.Module):
     def __init__(self, obs_shape, action_space, base=None, critic=True, critic_base=None, norm_observations=False, dist=None):
         """
