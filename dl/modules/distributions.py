@@ -69,7 +69,7 @@ class TanhNormal(D.Distribution):
         Gradients will and should *not* pass through this operation.
         See https://github.com/pytorch/pytorch/issues/4620 for discussion.
         """
-        z = self.normal.sample().detach()
+        z = self.normal.sample(sample_shape).detach()
 
         if return_pretanh_value:
             return torch.tanh(z), z
@@ -80,7 +80,7 @@ class TanhNormal(D.Distribution):
         """
         Sampling in the reparameterization case.
         """
-        z = self.normal.rsample()
+        z = self.normal.rsample(sample_shape)
         if return_pretanh_value:
             return torch.tanh(z), z
         else:

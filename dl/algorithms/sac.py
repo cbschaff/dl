@@ -15,14 +15,8 @@ import numpy as np
 
 
 def soft_target_update(target_net, net, tau):
-    tstate = target_net.state_dict()
-    state = net.state_dict()
-    new_state = {}
-    for k,v in state.items():
-        new_state[k] = (1. - tau)*tstate[k] + tau*v
-    target_net.load_state_dict(new_state)
-
-
+    for tp, p in zip(target_net.parameters(), net.parameters()):
+        tp.data.copy_((1. - tau) * tp.data + tau * p.data)
 
 @gin.configurable(blacklist=['logdir'])
 class SAC(Trainer):
