@@ -88,7 +88,7 @@ class TanhNormal(D.Distribution):
 
     def entropy(self):
         # TODO: implement this.
-        return 0.
+        return torch.zeros([])
 
 
 
