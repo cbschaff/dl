@@ -154,7 +154,9 @@ class SAC(Trainer):
         self.opt_qf2.load_state_dict(state_dict['opt_qf2'])
         self.opt_vf.load_state_dict(state_dict['opt_vf'])
 
-        self.log_alpha = state_dict['log_alpha']
+        if state_dict['log_alpha']:
+            with torch.no_grad():
+                self.log_alpha.copy_(state_dict['log_alpha'])
         self.opt_vf.load_state_dict(state_dict['opt_vf'])
 
         self.buffer.load_state_dict(state_dict['buffer'])
@@ -273,6 +275,7 @@ class SAC(Trainer):
             batch = self.buffer.sample(self.batch_size)
 
             pi_loss, qf1_loss, qf2_loss, vf_loss = self.loss(batch)
+
             # update
             self.opt_qf1.zero_grad()
             qf1_loss.backward()
