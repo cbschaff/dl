@@ -266,7 +266,10 @@ class SAC(Trainer):
         self.losses['qf1'].append(qf1_loss.detach().cpu().numpy())
         self.losses['qf2'].append(qf2_loss.detach().cpu().numpy())
         self.losses['vf'].append(vf_loss.detach().cpu().numpy())
-        self.losses['alpha'].append(alpha_loss.detach().cpu().numpy())
+        if self.automatic_entropy_tuning:
+            self.losses['alpha'].append(alpha_loss.detach().cpu().numpy())
+        else:
+            self.losses['alpha'].append(alpha_loss)
         return pi_loss, qf1_loss, qf2_loss, vf_loss
 
 
