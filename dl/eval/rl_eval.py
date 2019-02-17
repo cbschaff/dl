@@ -40,6 +40,7 @@ def rl_evaluate(env, actor, nepisodes, outfile, device='cpu'):
 
     with open(outfile, 'w') as f:
         json.dump(outs, f)
+    return outs
 
 def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
     tmpdir = os.path.join(tempfile.gettempdir(), 'video_' + str(time.monotonic()))

@@ -1,0 +1,9 @@
+import dl.util.gin_torch_externals 
+             FeedForwardNet.activation_fn = @F.relu 
+             FeedForwardNet.activate_last = False 
+             FeedForwardNet.units = [64,64,1] 
+             FeedForwardNet.in_shape = 2304 
+             Conv2dNet.activation_fn = @F.relu 
+             Conv2dNet.activate_last = True 
+             Conv2dNet.in_channels = 3 
+             Conv2dNet.convs = [(16,3), (32,3,2), (64,3,1,1)] 

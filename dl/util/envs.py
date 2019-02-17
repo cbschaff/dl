@@ -4,7 +4,7 @@ from baselines.common.vec_env import VecEnvWrapper
 from gym.spaces import Box
 from dl.util import Monitor
 from dl.util import logger
-import gin, os
+import gin, os, time
 import torch
 from collections import deque
 
@@ -20,8 +20,10 @@ class EpsilonGreedy(ActionWrapper):
         return action
 
 class VecMonitor(VecEnvWrapper):
-    def __init__(self, venv, max_history=1000):
+    def __init__(self, venv, max_history=1000, tstart=0, tbX=False):
         super().__init__(venv)
+        self.t = tstart
+        self.enable_tbX = tbX
         self.episode_rewards = deque(maxlen=max_history)
         self.episode_lengths = deque(maxlen=max_history)
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
@@ -29,6 +31,7 @@ class VecMonitor(VecEnvWrapper):
 
     def reset(self):
         obs = self.venv.reset()
+        self.t += sum(self.lens)
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
         return obs
@@ -41,9 +44,39 @@ class VecMonitor(VecEnvWrapper):
             if done:
                 self.episode_lengths.append(self.lens[i])
                 self.episode_rewards.append(self.rews[i])
+                self.t += self.lens[i]
+                if self.enable_tbX and logger.get_summary_writer():
+                    logger.add_scalar('env/episode_length', self.lens[i], self.t, time.time())
+                    logger.add_scalar('env/episode_reward', self.rews[i], self.t, time.time())
                 self.lens[i] = 0
                 self.rews[i] = 0.
         return obs, rews, dones, infos
+
+class TBXMonitor(gym.Wrapper):
+    def __init__(self, env, tstart=0):
+        super().__init__(env)
+        self.t = tstart
+        self.eplen = 0
+        self.eprew = 0.
+
+    def reset(self, **kwargs):
+        self.eplen = 0
+        self.eprew = 0.
+        return self.env.reset()
+
+    def step(self, action):
+        ob, r, done, info = self.env.step(action)
+        self.t += 1
+        self.eplen += 1
+        self.eprew += r
+        if done:
+            if logger.get_summary_writer():
+                logger.add_scalar('env/episode_length', self.eplen, self.t, time.time())
+                logger.add_scalar('env/episode_reward', self.eprew, self.t, time.time())
+            self.eplen = 0
+            self.eprew = 0.
+        return ob, r, done, info
+
 
 
 class FrameStack(Wrapper):

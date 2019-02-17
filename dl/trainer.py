@@ -30,7 +30,7 @@ class Trainer(object):
         self.save_period = save_period
         self.maxt = maxt
         self.maxseconds = maxseconds
-        logger.configure(os.path.join(logdir, 'logs'), ['stdout', 'log', 'json'])
+        logger.configure(logdir, ['stdout', 'log'], tbX=True)
 
         self.t = 0
 
@@ -85,6 +85,7 @@ class Trainer(object):
             logger.log("Caught Ctrl-C. Saving model and exiting...")
         if self.t not in self.ckptr.ckpts():
             self.save()
+        logger.export_scalars(self.ckptr.format.format(self.t) + '.json')
         self.close()
 
     def close(self):

@@ -1,7 +1,7 @@
 from dl import Trainer
 from dl.modules import QFunction
 from dl.util import ReplayBuffer, PrioritizedReplayBuffer
-from dl.util import logger, find_monitor, FrameStack, EpsilonGreedy
+from dl.util import logger, find_monitor, FrameStack, EpsilonGreedy, TBXMonitor
 from dl.eval import rl_evaluate, rl_record, rl_plot
 from baselines.common.schedules import LinearSchedule
 import gin, os, time, json
@@ -40,7 +40,9 @@ class QLearning(Trainer):
                  **trainer_kwargs
                  ):
         super().__init__(logdir, **trainer_kwargs)
-        self.env = env_fn(rank=0)
+        tstart = max(self.ckptr.ckpts()) if len(self.ckptr.ckpts()) > 0 else 0
+        self.env = TBXMonitor(env_fn(rank=0), tstart=tstart)
+        self.env_fn = env_fn
         self.gamma = gamma
         self.batch_size = batch_size
         self.update_period = update_period
@@ -152,6 +154,9 @@ class QLearning(Trainer):
             err = weight * err
         loss = err.mean()
         self.losses.append(loss)
+        if self.t % self.log_period == 0 and self.t > 0:
+            logger.add_scalar('alg/maxq', torch.max(q).detach().cpu().numpy(), self.t, time.time())
+
         return loss
 
     def step(self):
@@ -184,7 +189,8 @@ class QLearning(Trainer):
         # Logging stats...
         logger.logkv('Loss', meanloss)
         logger.logkv('timesteps', self.t)
-        logger.logkv('fps', int((self.t - self.t_start) / (time.monotonic() - self.time_start)))
+        fps = int((self.t - self.t_start) / (time.monotonic() - self.time_start))
+        logger.logkv('fps', fps)
         logger.logkv('time_elapsed', time.monotonic() - self.time_start)
         logger.logkv('time spent exploring', self.eps_schedule.value(self.t))
 
@@ -193,17 +199,23 @@ class QLearning(Trainer):
             logger.logkv('mean episode length', np.mean(monitor.episode_lengths[-100:]))
             logger.logkv('mean episode reward', np.mean(monitor.episode_rewards[-100:]))
         logger.dumpkvs()
+        logger.add_scalar('alg/loss', meanloss, self.t, time.time())
+        logger.add_scalar('alg/fps', fps, self.t, time.time())
+        logger.add_scalar('alg/epsilon', self.eps_schedule.value(self.t), self.t, time.time())
 
     def evaluate(self):
         self.net.train(False)
+        env = self.env_fn(rank=1)
         if self.frame_stack > 1:
-            eval_env = EpsilonGreedy(FrameStack(self.env, self.frame_stack), self.eval_eps)
+            eval_env = EpsilonGreedy(FrameStack(env, self.frame_stack), self.eval_eps)
         else:
-            eval_env = EpsilonGreedy(self.env, self.eval_eps)
+            eval_env = EpsilonGreedy(env, self.eval_eps)
 
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'eval', self.ckptr.format.format(self.t) + '.json')
-        rl_evaluate(eval_env, self.net, self.eval_nepisodes, outfile, self.device)
+        stats = rl_evaluate(eval_env, self.net, self.eval_nepisodes, outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'], self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'], self.t, time.time())
 
         os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
@@ -211,7 +223,6 @@ class QLearning(Trainer):
 
         if find_monitor(self.env):
             rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
-        self._reset()
         self.net.train(True)
 
     def close(self):
@@ -227,9 +238,9 @@ class TestQLearning(unittest.TestCase):
     def test_ql(self):
         ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, target_update_period=100, maxt=1000, eval=True, eval_period=1000)
         ql.train()
-        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, maxt=1000, eval=True, eval_period=1000)
+        ql = QLearning('logs', learning_starts=100, eval_nepisodes=1, maxt=2000, eval=False)
         ql.train() # loads checkpoint
-        assert ql.buffer.num_in_buffer == 1000
+        assert ql.buffer.num_in_buffer == 2000
         shutil.rmtree('logs')
 
 

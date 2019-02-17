@@ -6,7 +6,7 @@ https://arxiv.org/abs/1812.05905
 from dl import Trainer
 from dl.modules import Policy, QFunction, ValueFunction, TanhDiagGaussian
 from dl.util import ReplayBuffer
-from dl.util import logger, find_monitor, FrameStack
+from dl.util import logger, find_monitor, FrameStack, TBXMonitor
 from dl.eval import rl_evaluate, rl_record, rl_plot
 import gin, os, time, json
 import torch
@@ -53,7 +53,9 @@ class SAC(Trainer):
                  **trainer_kwargs
     ):
         super().__init__(logdir, **trainer_kwargs)
-        self.env = env_fn(rank=0)
+        tstart = max(self.ckptr.ckpts()) if len(self.ckptr.ckpts()) > 0 else 0
+        self.env = TBXMonitor(env_fn(rank=0), tstart=tstart)
+        self.env_fn = env_fn
         self.gamma = gamma
         self.batch_size = batch_size
         self.update_period = update_period
@@ -270,6 +272,13 @@ class SAC(Trainer):
             self.losses['alpha'].append(alpha_loss.detach().cpu().numpy())
         else:
             self.losses['alpha'].append(alpha_loss)
+        if self.t % self.log_period == 0 and self.t > 0:
+            if self.automatic_entropy_tuning:
+                logger.add_scalar('ent/log_alpha', self.log_alpha.detach().cpu().numpy(), self.t, time.time())
+                scalars = {"target": self.target_entropy, "entropy": torch.mean(logp.detach()).cpu().numpy().item()}
+                logger.add_scalars('ent/entropy', scalars, self.t, time.time())
+            else:
+                logger.add_scalar('ent/entropy', torch.mean(logp.detach()).cpu().numpy().item(), self.t, time.time())
         return pi_loss, qf1_loss, qf2_loss, vf_loss
 
 
@@ -311,6 +320,7 @@ class SAC(Trainer):
         logger.log("========================|  Timestep: {}  |========================".format(self.t))
         for k,v in self.losses.items():
             logger.logkv(f'Loss - {k}', np.mean(v))
+            logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
             self.losses[k] = []
         # Logging stats...
         logger.logkv('timesteps', self.t)
@@ -324,15 +334,18 @@ class SAC(Trainer):
         logger.dumpkvs()
 
 
+
     def evaluate(self):
         self.pi.train(False)
-        eval_env = self.env
+        eval_env = self.env_fn(rank=1)
         if self.frame_stack > 1:
-            eval_env = FrameStack(self.env, self.frame_stack)
+            eval_env = FrameStack(eval_env, self.frame_stack)
 
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'eval', self.ckptr.format.format(self.t) + '.json')
-        rl_evaluate(eval_env, self.pi, self.eval_nepisodes, outfile, self.device)
+        stats = rl_evaluate(eval_env, self.pi, self.eval_nepisodes, outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'], self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'], self.t, time.time())
 
         os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
@@ -340,7 +353,6 @@ class SAC(Trainer):
 
         if find_monitor(self.env):
             rl_plot(os.path.join(self.logdir, 'logs'), self.env.spec.id, self.t)
-        self._reset()
         self.pi.train(True)
 
 
