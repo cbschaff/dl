@@ -75,7 +75,7 @@ class SAC(Trainer):
         ob_shape = (s[0] * self.frame_stack, *s[1:])
 
         self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
-        if self.discrete:
+        if not self.discrete:
             dist = TanhDiagGaussian
         else:
             dist = None
