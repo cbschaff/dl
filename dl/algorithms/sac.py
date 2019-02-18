@@ -73,7 +73,9 @@ class SAC(Trainer):
 
         s = self.env.observation_space.shape
         ob_shape = (s[0] * self.frame_stack, *s[1:])
-        if self.env.action_space.__class__.__name__ == 'Box':
+
+        self.discrete = self.env.action_space.__class__.__name__ == 'Box'
+        if self.discrete:
             dist = TanhDiagGaussian
         else:
             dist = None
@@ -211,11 +213,15 @@ class SAC(Trainer):
         ob, ac, rew, next_ob, done = [torch.from_numpy(x).to(self.device) for x in batch]
 
         pi_out = self.pi(ob, reparameterization_trick=self.rsample)
-        if self.rsample:
-            new_ac, new_pth_ac = pi_out.dist.rsample(return_pretanh_value=True)
+        if self.discrete:
+            new_ac = pi_out.action
+            logp = pi_out.logp
         else:
-            new_ac, new_pth_ac = pi_out.dist.sample(return_pretanh_value=True)
-        logp = pi_out.dist.log_prob(new_ac, new_pth_ac)
+            if self.rsample:
+                new_ac, new_pth_ac = pi_out.dist.rsample(return_pretanh_value=True)
+            else:
+                new_ac, new_pth_ac = pi_out.dist.sample(return_pretanh_value=True)
+            logp = pi_out.dist.log_prob(new_ac, new_pth_ac)
         if self.norm_obs:
             ob = self.pi.running_norm(ob)
         q1 = self.qf1(ob, ac).value
@@ -260,7 +266,7 @@ class SAC(Trainer):
                 assert pi_targ.shape == logp.shape
                 pi_loss = (logp * (alpha * logp - pi_targ).detach()).mean()
 
-            if self.env.action_space.__class__.__name__ == 'Box': # continuous action space.
+            if not self.discrete: # continuous action space.
                 pi_loss += self.policy_mean_reg_weight * (pi_out.dist.normal.mean**2).mean()
                 pi_loss += self.policy_std_reg_weight * (pi_out.logstd**2).mean()
 
