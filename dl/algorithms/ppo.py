@@ -86,7 +86,7 @@ class PPO(Trainer):
     def _make_env(self, env_fn, nenv):
         def _env(rank):
             def _thunk():
-                return env_fn(rank)
+                return env_fn(rank=rank)
             return _thunk
         if nenv > 1:
             env = SubprocVecEnv([_env(i) for i in range(nenv)])

@@ -275,7 +275,7 @@ class SAC(Trainer):
         if self.t % self.log_period == 0 and self.t > 0:
             if self.automatic_entropy_tuning:
                 logger.add_scalar('ent/log_alpha', self.log_alpha.detach().cpu().numpy(), self.t, time.time())
-                scalars = {"target": self.target_entropy, "entropy": torch.mean(logp.detach()).cpu().numpy().item()}
+                scalars = {"target": -self.target_entropy, "entropy": torch.mean(logp.detach()).cpu().numpy().item()}
                 logger.add_scalars('ent/entropy', scalars, self.t, time.time())
             else:
                 logger.add_scalar('ent/entropy', torch.mean(logp.detach()).cpu().numpy().item(), self.t, time.time())

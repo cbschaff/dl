@@ -5,6 +5,7 @@ import dl.util
 optim.Adam.lr = 0.00025
 optim.Adam.betas = (0.9, 0.999)
 
+PPO.env_fn = @atari_env
 PPO.nenv = 8
 PPO.optimizer = @optim.Adam
 PPO.gamma = 0.99
