@@ -46,8 +46,8 @@ class VecMonitor(VecEnvWrapper):
                 self.episode_rewards.append(self.rews[i])
                 self.t += self.lens[i]
                 if self.enable_tbX and logger.get_summary_writer():
-                    logger.add_scalar('env/episode_length', int(self.lens[i]), self.t, time.time())
-                    logger.add_scalar('env/episode_reward', float(self.rews[i]), self.t, time.time())
+                    logger.add_scalar('env/episode_length', self.lens[i], self.t, time.time())
+                    logger.add_scalar('env/episode_reward', self.rews[i], self.t, time.time())
                 self.lens[i] = 0
                 self.rews[i] = 0.
         return obs, rews, dones, infos
@@ -71,8 +71,8 @@ class TBXMonitor(gym.Wrapper):
         self.eprew += r
         if done:
             if logger.get_summary_writer():
-                logger.add_scalar('env/episode_length', int(self.eplen), self.t, time.time())
-                logger.add_scalar('env/episode_reward', float(self.eprew), self.t, time.time())
+                logger.add_scalar('env/episode_length', self.eplen, self.t, time.time())
+                logger.add_scalar('env/episode_reward', self.eprew, self.t, time.time())
             self.eplen = 0
             self.eprew = 0.
         return ob, r, done, info

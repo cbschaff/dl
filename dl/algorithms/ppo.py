@@ -234,8 +234,8 @@ class PPO(Trainer):
         logger.logkv('mean episode reward', np.mean(self.env.episode_rewards))
         vmax = torch.max(self.rollout.data['vpred']).cpu().numpy()
         vmean = torch.mean(self.rollout.data['vpred']).cpu().numpy()
-        logger.add_scalar('alg/v_max', float(vmax), self.t, time.time())
-        logger.add_scalar('alg/v_mean', float(vmean), self.t, time.time())
+        logger.add_scalar('alg/v_max', vmax, self.t, time.time())
+        logger.add_scalar('alg/v_mean', vmean, self.t, time.time())
         logger.dumpkvs()
 
     def evaluate(self):
@@ -246,8 +246,8 @@ class PPO(Trainer):
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'eval', self.ckptr.format.format(self.t) + '.json')
         stats = rl_evaluate(eval_env, self.net, self.eval_nepisodes, outfile, self.device)
-        logger.add_scalar('eval/mean_episode_reward', float(stats['mean_reward']), self.t, time.time())
-        logger.add_scalar('eval/mean_episode_length', float(stats['mean_length']), self.t, time.time())
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'], self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'], self.t, time.time())
 
         os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'video', self.ckptr.format.format(self.t) + '.mp4')
