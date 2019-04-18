@@ -40,23 +40,28 @@ def configure(logdir, format_strs=None, tbX=False, **kwargs):
 def get_summary_writer():
     return WRITER
 
-def _unnumpy(scalar):
+def _unnumpy(x):
     """
-    Some numpy data types are not json serializable.
+    Numpy data types are not json serializable.
     """
-    if scalar is None:
-        return None
-    if hasattr(scalar, 'tolist'):
-        return scalar.tolist()
-    return scalar
+    if hasattr(x, 'tolist'):
+        return x.tolist()
+    return x
 
 def add_scalar(tag, scalar_value, global_step=None, walltime=None):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_scalar(tag, _unnumpy(scalar_value), _unnumpy(global_step), _unnumpy(walltime))
+    scalar_value = _unnumpy(scalar_value)
+    global_step  = _unnumpy(global_step)
+    walltime     = _unnumpy(walltime)
+    WRITER.add_scalar(tag, scalar_value, global_step, walltime)
     # change interface so both add_scalar and add_scalars adds to the scalar dict.
     WRITER._SummaryWriter__append_to_scalar_dict(tag, scalar_value, global_step, walltime)
 
 def add_scalars(main_tag, tag_scalar_dict, global_step=None, walltime=None):
+    for k,v in tag_scalar_dict.items():
+        tag_scalar_dict[k] = _unnumpy(v)
+    global_step  = _unnumpy(global_step)
+    walltime     = _unnumpy(walltime)
     assert WRITER is not None, "call configure to initialize SummaryWriter"
     WRITER.add_scalars(main_tag, tag_scalar_dict, global_step, walltime)
 
