@@ -48,20 +48,32 @@ def _unnumpy(x):
         return x.tolist()
     return x
 
+def _scalarize(x):
+    """
+    Turn into scalar
+    """
+    x = _unnumpy(x)
+    if isinstance(x, list):
+        if len(x) == 1:
+            return _scalarize(x[0])
+        else:
+            assert False, "Tried to log something that isn't a scalar!"
+    return x
+
 def add_scalar(tag, scalar_value, global_step=None, walltime=None):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    scalar_value = _unnumpy(scalar_value)
-    global_step  = _unnumpy(global_step)
-    walltime     = _unnumpy(walltime)
+    scalar_value = _scalarize(scalar_value)
+    global_step  = _scalarize(global_step)
+    walltime     = _scalarize(walltime)
     WRITER.add_scalar(tag, scalar_value, global_step, walltime)
     # change interface so both add_scalar and add_scalars adds to the scalar dict.
     WRITER._SummaryWriter__append_to_scalar_dict(tag, scalar_value, global_step, walltime)
 
 def add_scalars(main_tag, tag_scalar_dict, global_step=None, walltime=None):
     for k,v in tag_scalar_dict.items():
-        tag_scalar_dict[k] = _unnumpy(v)
-    global_step  = _unnumpy(global_step)
-    walltime     = _unnumpy(walltime)
+        tag_scalar_dict[k] = _scalarize(v)
+    global_step  = _scalarize(global_step)
+    walltime     = _scalarize(walltime)
     assert WRITER is not None, "call configure to initialize SummaryWriter"
     WRITER.add_scalars(main_tag, tag_scalar_dict, global_step, walltime)
 
