@@ -21,6 +21,7 @@ PPO.norm_advantages = True
 PPO.norm_observations = False
 
 Trainer.maxt = 10000000
+Trainer.seed = 0
 Trainer.eval = True
 Trainer.eval_period = 1000000
 Trainer.save_period = 1000000

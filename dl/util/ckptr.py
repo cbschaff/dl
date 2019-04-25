@@ -2,6 +2,7 @@ import os, glob
 import numpy as np
 import torch
 import gin
+from dl.util import rng
 
 
 @gin.configurable(blacklist=['ckptdir'])
@@ -24,18 +25,24 @@ class Checkpointer():
         ts = self.ckpts()
         max_t = max(ts) if len(ts) > 0 else -1
         assert t > max_t, f"Cannot save a checkpoint at timestep {t} when checkpoints at a later timestep exist."
+        assert '_rng' not in save_dict, "'_rng' key is used by the checkpointer to save random states. Please change your key."
+        save_dict['_rng'] = rng.get_state()
         torch.save(save_dict, self.get_ckpt_path(t))
         self.prune_ckpts()
 
-    def load(self, t=None):
+    def load(self, t=None, restore_rng_state=True):
         if t is None:
             t = max(self.ckpts())
         path = self.get_ckpt_path(t)
         assert os.path.exists(path), f"Can't find checkpoint at iteration {t}."
         if torch.cuda.is_available():
-            return torch.load(path)
+            save_dict = torch.load(path)
         else:
-            return torch.load(path, map_location='cpu')
+            save_dict = torch.load(path, map_location='cpu')
+        if restore_rng_state:
+            rng.set_state(save_dict['_rng'])
+        del save_dict['_rng']
+        return save_dict
 
     def prune_ckpts(self):
         if self.max_ckpts_to_keep is None:
@@ -110,6 +117,20 @@ class TestCheckpointer(unittest.TestCase):
             ckptr.save({'test': t},  t)
         assert ckptr.ckpts() == [97,98,99]
         rmtree('.test_ckpt_dir')
+
+    def test_rng(self):
+        ckptr = Checkpointer('./.test_ckpt_dir')
+        rng.seed(0)
+        ckptr.save({'test': 1},  1)
+        r1 = np.random.rand(10)
+        ckptr.load(1)
+        r2 = np.random.rand(10)
+        assert np.allclose(r1, r2)
+        ckptr.load(1, restore_rng_state=False)
+        r2 = np.random.rand(10)
+        assert not np.allclose(r1, r2)
+        rmtree('.test_ckpt_dir')
+
 
 
 if __name__=='__main__':

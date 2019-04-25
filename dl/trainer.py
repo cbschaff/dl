@@ -1,5 +1,5 @@
 import gin, os, time
-from dl.util import Checkpointer, logger
+from dl.util import Checkpointer, logger, rng
 
 @gin.configurable(blacklist=['logdir'])
 class Trainer(object):
@@ -11,6 +11,8 @@ class Trainer(object):
     Args:
         logdir (str):
             The base directory for the training run.
+        seed (int):
+            The initial seed of this experiment.
         eval (bool):
             Whether or not to evaluate the model throughout training.
         eval_period (int):
@@ -22,17 +24,19 @@ class Trainer(object):
         maxseconds (float):
             The maximum amount of time to train the model.
     """
-    def __init__(self, logdir, eval=False, eval_period=None, save_period=None, maxt=None, maxseconds=None):
+    def __init__(self, logdir, seed=0, eval=False, eval_period=None, save_period=None, maxt=None, maxseconds=None):
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(self.logdir, 'ckpts'))
         self.eval = eval
         self.eval_period = eval_period
         self.save_period = save_period
         self.maxt = maxt
+        self.seed = seed
         self.maxseconds = maxseconds
         logger.configure(logdir, ['stdout', 'log'], tbX=True)
 
         self.t = 0
+        rng.seed(seed)
 
     def step(self):
         raise NotImplementedError

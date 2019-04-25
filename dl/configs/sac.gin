@@ -29,6 +29,7 @@ SAC.reward_scale = 1
 SAC.gpu = True # set to False to force cpu
 
 Trainer.maxt = 50000000
+Trainer.seed = 0
 Trainer.eval = True
 Trainer.eval_period = 1000000
 Trainer.save_period = 1000000
