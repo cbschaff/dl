@@ -186,6 +186,10 @@ class SAC(Trainer):
         with torch.no_grad():
             x = torch.from_numpy(x).to(self.device)
             ac = self.pi(x[None]).action.cpu().numpy()[0]
+        if self.t == 0:
+            self.pi.log_graph(x[None])
+            self.qf1.log_graph(x[None], torch.from_numpy(ac).to(self.device)[None])
+            self.vf.log_graph(x[None])
         self._ob, r, done, _ = self.env.step(self._unnorm_action(ac))
         self.buffer.store_effect(idx, ac, r, done)
         if done:

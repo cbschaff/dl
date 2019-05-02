@@ -115,8 +115,12 @@ class PPO(Trainer):
         with torch.no_grad():
             if self.recurrent:
                 outs = self.net(self._ob, mask=self._mask, state_in=self._state)
+                if self.t == 0:
+                    self.net.log_graph(self._ob, self._mask, self._state)
             else:
                 outs = self.net(self._ob)
+                if self.t == 0:
+                    self.net.log_graph(self._ob, None, None)
         ob, r, done, _ = self.env.step(outs.action.cpu().numpy())
         data = {}
         data['ob'] = self._ob
@@ -261,6 +265,7 @@ class PPO(Trainer):
         if hasattr(self.env, 'close'):
             self.env.close()
         logger.reset()
+
 
 
 
