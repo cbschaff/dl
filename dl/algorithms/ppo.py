@@ -113,14 +113,15 @@ class PPO(Trainer):
 
     def act(self):
         with torch.no_grad():
+            # if self.t == 0:
+            #     if self.recurrent:
+            #         self.net.log_graph(self._ob, self._mask, self._state)
+            #     else:
+            #         self.net.log_graph(self._ob, None, None)
             if self.recurrent:
                 outs = self.net(self._ob, mask=self._mask, state_in=self._state)
-                if self.t == 0:
-                    self.net.log_graph(self._ob, self._mask, self._state)
             else:
                 outs = self.net(self._ob)
-                if self.t == 0:
-                    self.net.log_graph(self._ob, None, None)
         ob, r, done, _ = self.env.step(outs.action.cpu().numpy())
         data = {}
         data['ob'] = self._ob
