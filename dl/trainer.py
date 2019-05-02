@@ -33,7 +33,7 @@ class Trainer(object):
         self.maxt = maxt
         self.seed = seed
         self.maxseconds = maxseconds
-        logger.configure(logdir, ['stdout', 'log'], tbX=True)
+        logger.configure(logdir, ['stdout', 'log'])
 
         self.t = 0
         rng.seed(seed)

@@ -80,6 +80,12 @@ class ValueFunction(nn.Module):
 
         self.outputs = namedtuple('Outputs', ['value'])
 
+    def log_graph(self, ob):
+        from dl.util import logger
+        if logger.get_summary_writer() is None:
+            return
+            logger.add_graph(self, ob)
+
     def forward(self, x):
         """
         Computes Q-value.
@@ -128,6 +134,20 @@ class QFunction(nn.Module):
         nn.init.constant_(self.qvals.bias.data, 0)
 
         self.outputs = namedtuple('Outputs', ['action', 'value', 'max_a', 'max_q', 'qvals'])
+
+    def log_graph(self, ob, ac=None):
+        from dl.util import logger
+        if logger.get_summary_writer() is None:
+            return
+        if ac is None or self.discrete:
+            logger.add_graph(self.base, ob)
+        else:
+            logger.add_graph(self.base, (ob,ac))
+        return
+        if ac is None:
+            logger.add_graph(self, ob)
+        else:
+            logger.add_graph(self, (ob,ac))
 
     def forward(self, x, action=None):
         """
@@ -239,6 +259,17 @@ class Policy(nn.Module):
         else:
             vf_out = None
         return out, vf_out, state_out
+
+    def log_graph(self, x, mask=None, state_in=None):
+        from dl.util import logger
+        if logger.get_summary_writer() is None:
+            return
+        if state_in is None:
+            logger.add_graph(self.base, (x,))
+        else:
+            logger.add_graph(self.base, (x, mask, state_out))
+        if self.critic and self.critic_base:
+            logger.add_graph(self.critic_base, x)
 
     def forward(self, X, mask=None, state_in=None, deterministic=False, reparameterization_trick=False):
         """

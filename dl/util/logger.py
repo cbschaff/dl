@@ -3,7 +3,9 @@ Change baselines logger to append to log files.
 """
 from baselines.logger import *
 from baselines.logger import configure as baselines_configure
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
+import torch
 import os
 
 def append_human_init(self, filename_or_file):
@@ -27,100 +29,132 @@ HumanOutputFormat.__init__ = append_human_init
 JSONOutputFormat.__init__ = append_json_init
 CSVOutputFormat.__init__ = append_csv_init
 
-# create global tensorboardX summary writer.
+
+
 WRITER = None
-def configure(logdir, format_strs=None, tbX=False, **kwargs):
+
+def configure(logdir, format_strs=None, **kwargs):
     global WRITER
-    if tbX:
-        WRITER = SummaryWriter(logdir, **kwargs)
-    else:
-        WRITER = None
+    WRITER = TBWriter(logdir, **kwargs)
+    FLUSH = time.time()
     baselines_configure(logdir, format_strs)
 
 def get_summary_writer():
     return WRITER
 
-def _unnumpy(x):
-    """
-    Numpy data types are not json serializable.
-    """
-    if hasattr(x, 'tolist'):
-        return x.tolist()
-    return x
+class TBWriter(SummaryWriter):
+    def __init__(self, logdir, *args, **kwargs):
+        super().__init__(logdir, logdir, *args, **kwargs)
+        self.last_flush = time.time()
+        self.scalar_dict = {}
 
-def _scalarize(x):
-    """
-    Turn into scalar
-    """
-    x = _unnumpy(x)
-    if isinstance(x, list):
-        if len(x) == 1:
-            return _scalarize(x[0])
-        else:
-            assert False, "Tried to log something that isn't a scalar!"
-    return x
+    def _unnumpy(self, x):
+        """
+        Numpy data types are not json serializable.
+        """
+        if hasattr(x, 'tolist'):
+            return x.tolist()
+        return x
 
-def add_scalar(tag, scalar_value, global_step=None, walltime=None):
+    def _scalarize(self, x):
+        """
+        Turn into scalar
+        """
+        x = self._unnumpy(x)
+        if isinstance(x, list):
+            if len(x) == 1:
+                return self._scalarize(x[0])
+            else:
+                assert False, "Tried to log something that isn't a scalar!"
+        return x
+
+    def flush(self, force=True):
+        if time.time() - self.last_flush > 60 or force:
+            for writer in self.all_writers.values():
+                writer.flush()
+        self.last_flush = time.time()
+
+    def add_scalar(self, tag, scalar_value, global_step=None, walltime=None):
+        scalar_value = self._scalarize(scalar_value)
+        global_step  = self._scalarize(global_step)
+        walltime     = self._scalarize(walltime)
+        super().add_scalar(tag, scalar_value, global_step, walltime)
+        # change interface so both add_scalar and add_scalars adds to the scalar dict.
+        self._append_to_scalar_dict(tag, scalar_value, global_step, walltime)
+        self.flush(force=False)
+
+    def add_scalars(self, main_tag, tag_scalar_dict, global_step=None, walltime=None):
+        super().add_scalars(main_tag, tag_scalar_dict, global_step, walltime)
+        # edit scalar_dict
+        fw_logdir = self._get_file_writer().get_logdir()
+        for tag,value in tag_scalar_dict.items():
+            fwtag = fw_logdir + "/" + main_tag + "/" + tag
+            new_tag = main_tag + "/" + tag
+            del self.scalar_dict[fwtag]
+            self._append_to_scalar_dict(new_tag, value, global_step, walltime)
+
+
+    def _append_to_scalar_dict(self, tag, scalar_value, global_step, walltime):
+        if not tag in self.scalar_dict:
+            self.scalar_dict[tag] = {'value': [], 'step': [], 'time': []}
+        self.scalar_dict[tag]['value'].append(scalar_value)
+        self.scalar_dict[tag]['step'].append(global_step)
+        self.scalar_dict[tag]['time'].append(walltime)
+
+    def export_scalars(self, fname, overwrite=False):
+        os.makedirs(os.path.join(self.log_dir, 'scalar_data'), exist_ok=True)
+        if fname[-4:] != 'json':
+            fname += '.json'
+        fname = os.path.join(self.log_dir, 'scalar_data', fname)
+        if not os.path.exists(fname) or overwrite:
+            with open(fname, 'w') as f:
+                json.dump(self.scalar_dict, f)
+        self.flush(force=True)
+        self.scalar_dict = {}
+
+
+def add_scalar(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    scalar_value = _scalarize(scalar_value)
-    global_step  = _scalarize(global_step)
-    walltime     = _scalarize(walltime)
-    WRITER.add_scalar(tag, scalar_value, global_step, walltime)
-    # change interface so both add_scalar and add_scalars adds to the scalar dict.
-    WRITER._SummaryWriter__append_to_scalar_dict(tag, scalar_value, global_step, walltime)
+    WRITER.add_scalar(*args, **kwargs)
 
-def add_scalars(main_tag, tag_scalar_dict, global_step=None, walltime=None):
-    for k,v in tag_scalar_dict.items():
-        tag_scalar_dict[k] = _scalarize(v)
-    global_step  = _scalarize(global_step)
-    walltime     = _scalarize(walltime)
+def add_scalars(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_scalars(main_tag, tag_scalar_dict, global_step, walltime)
+    WRITER.add_scalars(*args, **kwargs)
 
-def add_histogram(tag, values, global_step=None, bins='tensorflow', walltime=None, max_bins=None):
+def add_histogram(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_histogram(tag, values, global_step, bins, walltime, max_bins)
+    WRITER.add_histogram(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_image(tag, img_tensor, global_step=None, walltime=None, dataformats='CHW'):
+def add_image(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_image(tag, img_tensor, global_step, walltime, dataformats)
+    WRITER.add_image(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_images(tag, img_tensor, global_step=None, walltime=None, dataformats='NCHW'):
+def add_figure(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_images(tag, img_tensor, global_step, walltime, dataformats)
+    WRITER.add_figure(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_image_with_boxes(tag, img_tensor, box_tensor, global_step=None,
-                             walltime=None, dataformats='CHW', **kwargs):
+def add_video(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_image_with_boxes(tag, img_tensor, box_tensor, global_step,
-                                 walltime, dataformats, **kwargs)
+    WRITER.add_video(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_figure(tag, figure, global_step=None, close=True, walltime=None):
+def add_audio(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_figure(tag, figure, global_step, close, walltime)
+    WRITER.add_audio(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_video(tag, vid_tensor, global_step=None, fps=4, walltime=None):
+def add_text(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_video(tag, vid_tensor, global_step, fps, walltime)
+    WRITER.add_text(*args, **kwargs)
+    WRITER.flush(force=True)
 
-def add_audio(tag, snd_tensor, global_step=None, sample_rate=44100, walltime=None):
+def add_graph(*args, **kwargs):
     assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_audio(tag, snd_tensor, global_step, sample_rate, walltime)
-
-def add_text(tag, text_string, global_step=None, walltime=None):
-    assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_text(tag, text_string, global_step, walltime)
-
-def add_graph(model, input_to_model=None, verbose=False, **kwargs):
-    assert WRITER is not None, "call configure to initialize SummaryWriter"
-    WRITER.add_graph(model, input_to_model, verbose, **kwargs)
-
+    WRITER.add_graph(*args, **kwargs)
+    WRITER.flush(force=True)
 
 def export_scalars(fname, overwrite=False):
-    assert WRITER is not None, "call configure to initialize SummaryWriter"
-    os.makedirs(os.path.join(WRITER.log_dir, 'scalar_data'), exist_ok=True)
-    if fname[-4:] != 'json':
-        fname += '.json'
-    fname = os.path.join(WRITER.log_dir, 'scalar_data', fname)
-    if not os.path.exists(fname) or overwrite:
-        WRITER.export_scalars_to_json(fname)
+    WRITER.export_scalars(fname, overwrite=overwrite)
