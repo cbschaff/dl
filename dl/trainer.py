@@ -65,6 +65,10 @@ class Trainer(object):
         self.time_start = time.monotonic()
         if len(self.ckptr.ckpts()) > 0:
             self.load()
+        if self.t == 0:
+            cstr = config.replace('\n', '  \n')
+            cstr = cstr.replace('#', '\\#')
+            logger.add_text('config', cstr, 0, time.time())
         if self.maxt and self.t > self.maxt:
             return
         if self.save_period:
