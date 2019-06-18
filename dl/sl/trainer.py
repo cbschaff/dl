@@ -57,13 +57,19 @@ class SLTrainer(Trainer):
 
     def step(self):
         self.model.train()
-        for batch in self.dtrain:
-            self.opt.zero_grad()
-            loss = self._handle_loss(self.loss(self._batch_to_device(batch)))
-            loss.backward()
-            self.opt.step()
-            self._nsamples += min(self._dsize - (self._nsamples % self._dsize), self.batch_size)
-        self.t += 1
+        if self._diter is None:
+            self._diter = self.dtrain.__iter__()
+        try:
+            batch = self._diter.__next__()
+        except StopIteration:
+            self.t += 1
+            self._diter = None
+            return
+        self.opt.zero_grad()
+        loss = self._handle_loss(self.loss(self._batch_to_device(batch)))
+        loss.backward()
+        self.opt.step()
+        self._nsamples += min(self._dsize - (self._nsamples % self._dsize), self.batch_size)
 
     def _handle_loss(self, loss):
         if isinstance(loss, torch.Tensor):
@@ -111,6 +117,11 @@ class SLTrainer(Trainer):
         for k in metrics:
             avg = np.mean(metrics[k])
             logger.add_scalar(f'val_metrics/{k}', avg, self.t, time.time())
+
+    def close(self):
+        if self._diter is not None:
+            self._diter.__del__()
+            self._diter = None
 
 
 
