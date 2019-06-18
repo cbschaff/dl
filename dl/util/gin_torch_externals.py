@@ -20,21 +20,21 @@ for f in funcs:
     except:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models) for inspect.isfunction(f)]
+funcs = [f for name,f in inspect.getmembers(torchvision.models) if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models')
     except:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models.segmentation) for inspect.isfunction(f)]
+funcs = [f for name,f in inspect.getmembers(torchvision.models.segmentation) if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models.segmentation')
     except:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models.detection) for inspect.isfunction(f)]
+funcs = [f for name,f in inspect.getmembers(torchvision.models.detection) if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models.detection')
