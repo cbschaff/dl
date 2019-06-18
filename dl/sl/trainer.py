@@ -59,7 +59,7 @@ class SLTrainer(Trainer):
         self.model.train()
         for batch in self.dtrain:
             self.opt.zero_grad()
-            loss = self._handle_loss(self.loss(batch))
+            loss = self._handle_loss(self.loss(self._batch_to_device(batch)))
             loss.backward()
             self.opt.step()
             self._nsamples += min(self._dsize - (self._nsamples % self._dsize), self.batch_size)
@@ -74,6 +74,12 @@ class SLTrainer(Trainer):
             for k in loss:
                 logger.add_scalar(f'train_loss/{k}', loss[k].detach().cpu().numpy(), self._nsamples, time.time())
             return loss['total']
+
+    def _batch_to_device(self, batch):
+        if isinstance(batch, torch.Tensor):
+            return batch.to(self.device)
+        else:
+            return {k:v.to(self.device) for k,v in batch.items()}
 
     def evaluate(self):
         if self.dval is None:
@@ -90,6 +96,7 @@ class SLTrainer(Trainer):
         metrics = {}
         with torch.no_grad():
             for batch in self.dval:
+                batch = self._batch_to_device(batch)
                 loss = self.loss(batch)
                 if isinstance(loss, torch.Tensor):
                     losses['total'].append(loss.cpu().numpy())
