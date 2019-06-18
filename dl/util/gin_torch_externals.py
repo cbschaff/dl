@@ -2,6 +2,7 @@ import gin
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision
 import inspect
 
 optimizers = [obj for name,obj in inspect.getmembers(optim) if inspect.isclass(obj)]
@@ -16,5 +17,26 @@ funcs = [f for name,f in inspect.getmembers(F) if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='F')
+    except:
+        pass
+
+funcs = [f for name,f in inspect.getmembers(torchvision.models) for inspect.isfunction(f)]
+for f in funcs:
+    try:
+        gin.config.external_configurable(f, module='models')
+    except:
+        pass
+
+funcs = [f for name,f in inspect.getmembers(torchvision.models.segmentation) for inspect.isfunction(f)]
+for f in funcs:
+    try:
+        gin.config.external_configurable(f, module='models.segmentation')
+    except:
+        pass
+
+funcs = [f for name,f in inspect.getmembers(torchvision.models.detection) for inspect.isfunction(f)]
+for f in funcs:
+    try:
+        gin.config.external_configurable(f, module='models.detection')
     except:
         pass

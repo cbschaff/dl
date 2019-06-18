@@ -1,43 +1,16 @@
 """
 Change baselines logger to append to log files.
 """
-from baselines.logger import *
-from baselines.logger import configure as baselines_configure
-#from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 import torch
-import os
-
-def append_human_init(self, filename_or_file):
-    if isinstance(filename_or_file, str):
-        self.file = open(filename_or_file, 'at')
-        self.own_file = True
-    else:
-        assert hasattr(filename_or_file, 'read'), 'expected file or str, got %s'%filename_or_file
-        self.file = filename_or_file
-        self.own_file = False
-
-def append_json_init(self, filename):
-    self.file = open(filename, 'at')
-
-def append_csv_init(self, filename):
-    self.file = open(filename, 'a+t')
-    self.keys = []
-    self.sep = ','
-
-HumanOutputFormat.__init__ = append_human_init
-JSONOutputFormat.__init__ = append_json_init
-CSVOutputFormat.__init__ = append_csv_init
-
+import os, time, json
 
 
 WRITER = None
 
-def configure(logdir, format_strs=None, **kwargs):
-    global WRITER
+def configure(logdir, **kwargs):
+    global WRITER, LOGDIR
     WRITER = TBWriter(logdir, **kwargs)
-    FLUSH = time.time()
-    baselines_configure(logdir, format_strs)
 
 def get_summary_writer():
     return WRITER
@@ -72,7 +45,7 @@ class TBWriter(SummaryWriter):
         if time.time() - self.last_flush > 60 or force:
             for writer in self.all_writers.values():
                 writer.flush()
-        self.last_flush = time.time()
+            self.last_flush = time.time()
 
     def add_scalar(self, tag, scalar_value, global_step=None, walltime=None):
         scalar_value = self._scalarize(scalar_value)
@@ -158,3 +131,75 @@ def add_graph(*args, **kwargs):
 
 def export_scalars(fname, overwrite=False):
     WRITER.export_scalars(fname, overwrite=overwrite)
+
+
+def log(out):
+    print(out)
+
+######################
+# Decorators
+######################
+
+class LogOutputs(object):
+    def __init__(self, f, log_freq=1, name=None, global_step_fn=None):
+        self.f = f
+        self.name = f.__name__ if name is None else name
+        self.log_freq = log_freq
+        self.count = 0
+        self.global_step_fn = global_step_fn
+
+    def __call__(self, *args, **kwargs):
+        out = self.f(*args, **kwargs)
+        self.count += 1
+        if self.count % self.log_freq == 0:
+            self.log(out)
+        return out
+
+
+    def log(self, out):
+        raise NotImplementedError
+
+class PrintOutputs(LogOutputs):
+    def log(self, out):
+        print('==================================')
+        print(f'Output of {self.name}:')
+        print(out)
+        print('==================================')
+
+class TBLogOutputs(LogOutputs):
+    def log(self, out):
+        if WRITER is None:
+            return
+        if self.global_step_fn:
+            t = self.global_step_fn()
+        else:
+            t = self.count
+        _tblog(self, out, t)
+
+    def _tblog(self, out, global_step):
+        raise NotImplementedError
+
+class TBLogScalar(TBLogOutputs):
+    def _tblog(self, out, global_step):
+        add_scalar(self.name, out, global_step, time.time())
+
+class TBLogScalarDict(TBLogOutputs):
+    def __init__(self, *args, group=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.group = group
+
+    def _tblog(self, out, global_step):
+        assert isinstance(out, dict)
+        if self.group:
+            add_scalars(self.name, out, t, time.time())
+        else:
+            for k in out:
+                add_scalar(self.name + f'/{k}', out[k], t, time.time())
+
+class TBLogText(TBLogOutputs):
+    def _tblog(self, out, global_step):
+        add_text(self.name, out, global_step, time.time())
+
+class TBLogImage(TBLogOutputs):
+    def _tblog(self, out, global_step):
+        add_image(self.name, out, global_step, time.time())
