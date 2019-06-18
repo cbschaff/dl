@@ -79,9 +79,13 @@ class TBWriter(SummaryWriter):
         if fname[-4:] != 'json':
             fname += '.json'
         fname = os.path.join(self.log_dir, 'scalar_data', fname)
-        if not os.path.exists(fname) or overwrite:
-            with open(fname, 'w') as f:
-                json.dump(self.scalar_dict, f)
+        i = 1
+        while not overwrite and os.path.exists(fname):
+            fname = fname.rsplit('.',1)[0] + f'_{i}.json'
+            i += 1
+        with open(fname, 'w') as f:
+            json.dump(self.scalar_dict, f)
+
         self.flush(force=True)
         self.scalar_dict = {}
 
