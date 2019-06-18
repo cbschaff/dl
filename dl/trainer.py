@@ -91,8 +91,7 @@ class Trainer(object):
                     last_eval = self.t
         except KeyboardInterrupt:
             logger.log("Caught Ctrl-C. Saving model and exiting...")
-        if self.t not in self.ckptr.ckpts():
-            self.save()
+        self.save()
         logger.export_scalars(self.ckptr.format.format(self.t) + '.json')
         self.close()
 

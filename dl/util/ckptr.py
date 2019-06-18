@@ -24,7 +24,7 @@ class Checkpointer():
     def save(self, save_dict, t):
         ts = self.ckpts()
         max_t = max(ts) if len(ts) > 0 else -1
-        assert t > max_t, f"Cannot save a checkpoint at timestep {t} when checkpoints at a later timestep exist."
+        assert t >= max_t, f"Cannot save a checkpoint at timestep {t} when checkpoints at a later timestep exist."
         assert '_rng' not in save_dict, "'_rng' key is used by the checkpointer to save random states. Please change your key."
         save_dict['_rng'] = rng.get_state()
         torch.save(save_dict, self.get_ckpt_path(t))
