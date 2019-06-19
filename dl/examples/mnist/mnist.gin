@@ -19,6 +19,7 @@ Trainer.seed          = 0
 Trainer.eval          = True
 Trainer.eval_period   = 1
 Trainer.save_period   = 1
+Trainer.maxseconds    = None
 
 Checkpointer.min_ckpt_period = 10
 Checkpointer.max_ckpts_to_keep = 1
