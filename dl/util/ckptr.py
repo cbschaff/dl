@@ -7,10 +7,9 @@ from dl.util import rng
 
 @gin.configurable(blacklist=['ckptdir'])
 class Checkpointer():
-    def __init__(self, ckptdir, max_ckpts_to_keep=None, min_ckpt_period=None, format='{:09d}'):
+    def __init__(self, ckptdir, ckpt_period=None, format='{:09d}'):
         self.ckptdir = ckptdir
-        self.max_ckpts_to_keep = max_ckpts_to_keep
-        self.min_ckpt_period = min_ckpt_period
+        self.ckpt_period = ckpt_period
         self.format = format
         os.makedirs(ckptdir, exist_ok=True)
 
@@ -45,20 +44,17 @@ class Checkpointer():
         return save_dict
 
     def prune_ckpts(self):
-        if self.max_ckpts_to_keep is None:
+        if self.ckpt_period is None:
             return
         ts = np.sort(self.ckpts())
-        if self.min_ckpt_period is None:
-            ts_to_remove = ts[:-self.max_ckpts_to_keep]
-        else:
-            ckpt_period = [t // self.min_ckpt_period for t in ts]
-            last_period = -1
-            ts_to_remove = []
-            for i, t in enumerate(ts):
-                if ckpt_period[i] > last_period:
-                    last_period = ckpt_period[i]
-                elif (i + self.max_ckpts_to_keep) < len(ts):
-                    ts_to_remove.append(t)
+        ckpt_period = [t // self.ckpt_period for t in ts]
+        last_period = -1
+        ts_to_remove = []
+        for i, t in enumerate(ts[:-1]):
+            if ckpt_period[i] > last_period:
+                last_period = ckpt_period[i]
+            else:
+                ts_to_remove.append(t)
 
         for t in ts_to_remove:
             os.remove(self.get_ckpt_path(t))
@@ -75,13 +71,13 @@ if __name__=='__main__':
 
     class TestCheckpointer(unittest.TestCase):
         def test(self):
-            ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=2, min_ckpt_period=10)
+            ckptr = Checkpointer('./.test_ckpt_dir', ckpt_period=10)
             for t in range(100):
                 ckptr.save({'test': t},  t)
 
             assert ckptr.load()['test'] == 99
 
-            assert ckptr.ckpts() == [0,10,20,30,40,50,60,70,80,90,98,99]
+            assert ckptr.ckpts() == [0,10,20,30,40,50,60,70,80,90,99]
             for t in [0,10,50]:
                 assert ckptr.load(t)['test'] == t
 
@@ -104,19 +100,6 @@ if __name__=='__main__':
                 ckptr.save({'test': t},  t)
             for t in range(100):
                 assert os.path.exists(ckptr.get_ckpt_path(t))
-            rmtree('.test_ckpt_dir')
-
-            ckptr = Checkpointer('./.test_ckpt_dir', min_ckpt_period=10)
-            for t in range(100):
-                ckptr.save({'test': t},  t)
-            for t in range(100):
-                assert os.path.exists(ckptr.get_ckpt_path(t))
-            rmtree('.test_ckpt_dir')
-
-            ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=3)
-            for t in range(100):
-                ckptr.save({'test': t},  t)
-            assert ckptr.ckpts() == [97,98,99]
             rmtree('.test_ckpt_dir')
 
         def test_rng(self):

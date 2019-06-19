@@ -14,15 +14,14 @@ Trainer.dataset_val   = @val/datasets.MNIST()
 Trainer.batch_size    = 32
 Trainer.shuffle       = True
 Trainer.num_workers   = 4
-Trainer.maxt          = 5
+Trainer.maxt          = 10
 Trainer.seed          = 0
 Trainer.eval          = True
 Trainer.eval_period   = 1
 Trainer.save_period   = 1
 Trainer.maxseconds    = None
 
-Checkpointer.min_ckpt_period = 10
-Checkpointer.max_ckpts_to_keep = 1
+Checkpointer.ckpt_period = 2
 
 
 models.alexnet.pretrained  = False
