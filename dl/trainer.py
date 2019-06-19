@@ -59,6 +59,7 @@ class Trainer(BaseTrainer):
     def step(self):
         self.model.train()
         if self._diter is None:
+            self.before_epoch()
             self._diter = self.dtrain.__iter__()
         try:
             batch = self._diter.__next__()
@@ -67,7 +68,8 @@ class Trainer(BaseTrainer):
             self._diter = None
             return
         self.opt.zero_grad()
-        loss = self._handle_loss(self.loss(self._batch_to_device(batch)))
+        batch = self.batch_to_device(batch)
+        loss = self._handle_loss(self.loss(batch, self.forward(batch)))
         loss.backward()
         self.opt.step()
         self._nsamples += min(self._dsize - (self._nsamples % self._dsize), self.batch_size)
@@ -82,13 +84,13 @@ class Trainer(BaseTrainer):
                 logger.add_scalar(f'train_loss/{k}', loss[k].detach().cpu().numpy(), self._nsamples, time.time())
             return loss['total']
 
-    def _batch_to_device(self, batch):
+    def batch_to_device(self, batch):
         if isinstance(batch, torch.Tensor):
             return batch.to(self.device)
         elif isinstance(batch, dict):
-            return {k:v.to(self.device) for k,v in batch.items()}
+            return {k: self.batch_to_device(v) for k,v in batch.items()}
         else:
-            return [b.to(self.device) for b in batch]
+            return [self.batch_to_device(b) for b in batch]
 
     def evaluate(self):
         if self.dval is None:
@@ -105,13 +107,14 @@ class Trainer(BaseTrainer):
         metrics = {}
         with torch.no_grad():
             for batch in self.dval:
-                batch = self._batch_to_device(batch)
-                loss = self.loss(batch)
+                batch = self.batch_to_device(batch)
+                out = self.forward(batch)
+                loss = self.loss(batch, out)
                 if isinstance(loss, torch.Tensor):
                     losses['total'].append(loss.cpu().numpy())
                 else:
                     _append_to_dict(losses, loss)
-                _append_to_dict(metrics, self.metrics(batch))
+                _append_to_dict(metrics, self.metrics(batch, out))
             self.visualization(self.dval)
 
         for k in losses:
@@ -127,12 +130,28 @@ class Trainer(BaseTrainer):
             self._diter = None
 
 
+    def before_epoch(self):
+        """
+        Called before the start of each epoch.
+        """
+        pass
 
-    def loss(self, batch):
+    def forward(self, batch):
+        """
+        Computes model outputs for a given minibatch.
+        Args:
+            batch: a minibatch from the training dataset
+        Returns:
+            model outputs
+        """
+        raise NotImplementedError
+
+    def loss(self, batch, model_out):
         """
         Computes the loss for a given minibatch.
         Args:
             batch: a minibatch from the training dataset
+            model_out: the return value of Trainer.forward
         Returns:
             A scalar tensor for the loss
             OR
@@ -141,11 +160,12 @@ class Trainer(BaseTrainer):
         """
         raise NotImplementedError
 
-    def metrics(self, batch):
+    def metrics(self, batch, model_out):
         """
         Computes scalar metrics for a given minibatch. (i.e. accuracy)
         Args:
             batch: a minibatch from the validation dataset
+            model_out: the return value of Trainer.forward
         Returns:
             A dict of scalar tensors.
         """
@@ -173,16 +193,17 @@ if __name__ == '__main__':
     class TestTrainer(unittest.TestCase):
         def test(self):
             class T(Trainer):
-                def loss(self, batch):
+                def forward(self, batch):
+                    return self.model(batch['x'])
+
+                def loss(self, batch, out):
                     _l = torch.nn.CrossEntropyLoss()
-                    out = self.model(batch['x'])
                     assert out.shape == (4,10)
                     assert batch['y'].shape == (4,)
                     l1 = _l(out, batch['y'])
                     return {'total': 3*l1, 'l1': l1, 'l2': 2*l1}
 
-                def metrics(self, batch):
-                    out = self.model(batch['x'])
+                def metrics(self, batch, out):
                     _, yhat = out.max(dim=1)
                     acc = (yhat == batch['y'])
                     return {'accuracy': acc}

@@ -8,26 +8,25 @@ import numpy as np
 
 @gin.configurable
 class MNISTTrainer(dl.Trainer):
-    def loss(self, batch):
-        data, target = batch
-        out = self.model(data)
-        return F.nll_loss(out, target)
+    def before_epoch(self):
+        dl.logger.log(f"Starting epoch {self.t}...")
 
-    def predict(self, batch):
-        data, target = batch
-        out = self.model(data)
+    def forward(self, batch):
+        return self.model(batch[0])
+
+    def loss(self, batch, out):
+        return F.nll_loss(out, batch[1])
+
+    def metrics(self, batch, out):
         _,yhat = torch.max(out, dim=1)
-        return yhat
-
-    def metrics(self, batch):
-        yhat = self.predict(batch)
         return {'accuracy': (yhat == batch[1]).float().mean()}
 
     def visualization(self, dval):
         confusion_matrix = np.zeros((10,10))
         for batch in self.dval:
-            batch = self._batch_to_device(batch)
-            yhat = self.predict(batch).cpu().numpy()
+            out = self.forward(self.batch_to_device(batch))
+            _,yhat = torch.max(out, dim=1)
+            yhat = yhat.cpu().numpy()
             target = batch[1]
             for i,y in enumerate(yhat):
                 confusion_matrix[target[i], y] += 1
@@ -35,6 +34,8 @@ class MNISTTrainer(dl.Trainer):
         confusion_matrix = 255 * (1. - confusion_matrix / s)
         confusion_matrix = confusion_matrix.astype(np.uint8)
         dl.logger.add_image('confusion', confusion_matrix[None], self.t, time.time())
+
+
 
 
 @gin.configurable
