@@ -28,9 +28,13 @@ class ReplayBuffer(object):
             - store frame_t and frame_(t+1) in the same buffer.
         For the typical use case in Atari Deep RL buffer with 1M frames the total
         memory footprint of this buffer is 10^6 * 84 * 84 bytes ~= 7 gigabytes
+
         Warning! Assumes that returning frame of zeros at the beginning
         of the episode, when there is less frames than `frame_history_len`,
         is acceptable.
+
+        Warning! Observations are concatenated along the first dimension.
+        For images, this means that the data format should be (C,H,W).
         Parameters
         ----------
         size: int
@@ -178,6 +182,8 @@ class ReplayBuffer(object):
             True if episode was finished after performing that action.
         """
         if self.action is None:
+            if not isinstance(action, np.ndarray):
+                action = np.array(action)
             self._init_replay_data(action.shape, action.dtype)
         self.action[idx] = action
         self.reward[idx] = reward
@@ -215,72 +221,73 @@ class ReplayBuffer(object):
 """
 Unit Tests
 """
-
-import unittest
-import gym, numpy as np
-
-class TestBuffer(unittest.TestCase):
-    def test(self):
-        buffer = ReplayBuffer(10, 4)
-        env = gym.make('PongNoFrameskip-v4')
-        init_obs = env.reset()
-        idx = buffer.store_frame(init_obs)
-        assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
-        for i in range(10):
-            ac = env.action_space.sample()
-            obs, r, done, _ = env.step(ac)
-            buffer.store_effect(idx, ac, r, done)
-            idx = buffer.store_frame(obs)
-
-        # Check sample shapes
-        s = buffer.sample(2)
-        assert s[0].shape == (2,12,210,160)
-        assert s[3].shape == (2,12,210,160)
-        s = buffer._encode_sample([4,5])
-        # Check observation stacking
-        assert np.allclose(s[0][0][-3:],   s[3][0][-6:-3])
-        assert np.allclose(s[0][0][-6:-3], s[3][0][-9:-6])
-        assert np.allclose(s[0][0][-9:-6], s[3][0][:3])
-
-        # Check sequential samples
-        assert np.allclose(s[0][0][-3:],   s[0][1][-6:-3])
-
-        # Check for wrap around when buffer is full
-        s = buffer._encode_sample([0])
-        assert not np.allclose(s[0][0][:-3], 0)
-
-        #Check env reset
-        buffer.env_reset()
-        assert buffer.done[buffer.next_idx - 1 % buffer.size] == True
-
-        # Check saving and loading
-        state = buffer.state_dict()
-        buffer2 = ReplayBuffer(10, 4)
-        buffer2.load_state_dict(state)
-
-        s1 = buffer._encode_sample([1,3,5])
-        s2 = buffer2._encode_sample([1,3,5])
-        for i,x in enumerate(s1):
-            assert np.allclose(x, s2[i])
-
-
-        for i in range(10):
-            ac = env.action_space.sample()
-            obs, r, done, _ = env.step(ac)
-            buffer.store_effect(idx, ac, r, done)
-            buffer2.store_effect(idx, ac, r, done)
-            idx = buffer.store_frame(obs)
-            idx2 = buffer2.store_frame(obs)
-            assert idx == idx2
-
-        s1 = buffer._encode_sample([1,3,5])
-        s2 = buffer2._encode_sample([1,3,5])
-        for i,x in enumerate(s1):
-            assert np.allclose(x, s2[i])
-
-
-
-
-
 if __name__=='__main__':
+
+    import unittest
+    import gym, numpy as np
+    from dl.rl.util import atari_env
+
+    class TestBuffer(unittest.TestCase):
+        def test(self):
+            buffer = ReplayBuffer(10, 4)
+            env = atari_env('Pong')
+            init_obs = env.reset()
+            idx = buffer.store_frame(init_obs)
+            assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
+            for i in range(10):
+                ac = env.action_space.sample()
+                obs, r, done, _ = env.step(ac)
+                buffer.store_effect(idx, ac, r, done)
+                idx = buffer.store_frame(obs)
+
+            # Check sample shapes
+            s = buffer.sample(2)
+            assert s[0].shape == (2,4,84,84)
+            assert s[3].shape == (2,4,84,84)
+            s = buffer._encode_sample([4,5])
+            # Check observation stacking
+            assert np.allclose(s[0][0][3], s[3][0][2])
+            assert np.allclose(s[0][0][2], s[3][0][1])
+            assert np.allclose(s[0][0][1], s[3][0][0])
+
+            # Check sequential samples
+            assert np.allclose(s[0][0][3],   s[0][1][2])
+
+            # Check for wrap around when buffer is full
+            s = buffer._encode_sample([0])
+            assert not np.allclose(s[0][0][:-3], 0)
+
+            #Check env reset
+            buffer.env_reset()
+            assert buffer.done[buffer.next_idx - 1 % buffer.size] == True
+
+            # Check saving and loading
+            state = buffer.state_dict()
+            buffer2 = ReplayBuffer(10, 4)
+            buffer2.load_state_dict(state)
+
+            s1 = buffer._encode_sample([1,3,5])
+            s2 = buffer2._encode_sample([1,3,5])
+            for i,x in enumerate(s1):
+                assert np.allclose(x, s2[i])
+
+
+            for i in range(10):
+                ac = env.action_space.sample()
+                obs, r, done, _ = env.step(ac)
+                buffer.store_effect(idx, ac, r, done)
+                buffer2.store_effect(idx, ac, r, done)
+                idx = buffer.store_frame(obs)
+                idx2 = buffer2.store_frame(obs)
+                assert idx == idx2
+
+            s1 = buffer._encode_sample([1,3,5])
+            s2 = buffer2._encode_sample([1,3,5])
+            for i,x in enumerate(s1):
+                assert np.allclose(x, s2[i])
+
+
+
+
+
     unittest.main()

@@ -93,74 +93,77 @@ class RolloutStorage(object):
         batch_count = self.num_steps
         return batch_mean, batch_var, batch_count
 
-import unittest
-import numpy as np
-
-class TestRollout(unittest.TestCase):
-    def test_feed_forward(self):
-        def _gen_data(np, x):
-            data = {}
-            data['ob'] = x*torch.ones(size=(np,1,84,84))
-            data['ac'] = torch.zeros(size=(np,1))
-            data['r'] = torch.zeros(size=(np,1))
-            data['mask'] = torch.ones(size=(np,1))
-            data['vpred'] = x*torch.ones(size=(np,1))
-            data['logp'] = torch.zeros(size=(np,1))
-            return data
-        r = RolloutStorage(10, 2, other_keys=['logp'])
-        for i in range(10):
-            r.insert(_gen_data(2,i))
-            if i < 9:
-                try:
-                    r.feed_forward_generator(6)
-                    assert False
-                except:
-                    pass
-        r.compute_targets(torch.ones(size=(2,1)), torch.ones(size=(2,1)), gamma=0.99, use_gae=True, lambda_=1.0, norm_advantages=True)
-        assert np.allclose(r.data['atarg'].mean(), 0., atol=1e-6) and np.allclose(r.data['atarg'].std(), 1., atol=1e-6)
-        for batch in r.feed_forward_generator(6):
-            assert batch['ob'].shape == (6,1,84,84) or batch['ob'].shape == (2,1,84,84)
-        try:
-            r.recurrent_generator(1)
-            assert False
-        except:
-            pass
-
-        bm, bv, bc = r.compute_ob_stats()
-        assert bc == r.num_steps
-        assert bm.shape == r.data['ob'].shape[2:]
-        assert bv.shape == r.data['ob'].shape[2:]
-
-    def test_recurrent(self):
-        def _gen_data(np, x):
-            data = {}
-            data['ob'] = x*torch.ones(size=(np,1,84,84))
-            data['ac'] = torch.zeros(size=(np,1))
-            data['r'] = torch.zeros(size=(np,1))
-            data['mask'] = torch.ones(size=(np,1))
-            data['vpred'] = x*torch.ones(size=(np,1))
-            data['logp'] = torch.zeros(size=(np,1))
-            data['state'] = torch.zeros(size=(np,5))
-            return data
-        r = RolloutStorage(10, 4, other_keys=['logp'], recurrent_state_keys=['state'])
-        for i in range(10):
-            r.insert(_gen_data(4,i))
-            if i < 9:
-                try:
-                    r.recurrent_generator(2)
-                    assert False
-                except:
-                    pass
-        r.compute_targets(torch.ones(size=(4,1)), torch.ones(size=(4,1)), gamma=0.99, use_gae=True, lambda_=1.0)
-        for batch in r.recurrent_generator(2):
-            assert batch['ob'].shape == (20,1,84,84)
-            assert batch['atarg'].shape == (20,1)
-            assert batch['vtarg'].shape == (20,1)
-            assert batch['mask'].shape == (20,1)
-            assert batch['r'].shape == (20,1)
-            assert batch['state'].shape == (2,5)
 
 
 
 if __name__ == '__main__':
+    import unittest
+    import numpy as np
+
+    class TestRollout(unittest.TestCase):
+        def test_feed_forward(self):
+            def _gen_data(np, x):
+                data = {}
+                data['ob'] = x*torch.ones(size=(np,1,84,84))
+                data['ac'] = torch.zeros(size=(np,1))
+                data['r'] = torch.zeros(size=(np,1))
+                data['mask'] = torch.ones(size=(np,1))
+                data['vpred'] = x*torch.ones(size=(np,1))
+                data['logp'] = torch.zeros(size=(np,1))
+                return data
+            r = RolloutStorage(10, 2, other_keys=['logp'])
+            for i in range(10):
+                r.insert(_gen_data(2,i))
+                if i < 9:
+                    try:
+                        r.feed_forward_generator(6)
+                        assert False
+                    except:
+                        pass
+            r.compute_targets(torch.ones(size=(2,1)), torch.ones(size=(2,1)), gamma=0.99, use_gae=True, lambda_=1.0, norm_advantages=True)
+            assert np.allclose(r.data['atarg'].mean(), 0., atol=1e-6) and np.allclose(r.data['atarg'].std(), 1., atol=1e-6)
+            for batch in r.feed_forward_generator(6):
+                assert batch['ob'].shape == (6,1,84,84) or batch['ob'].shape == (2,1,84,84)
+            try:
+                r.recurrent_generator(1)
+                assert False
+            except:
+                pass
+
+            bm, bv, bc = r.compute_ob_stats()
+            assert bc == r.num_steps
+            assert bm.shape == r.data['ob'].shape[2:]
+            assert bv.shape == r.data['ob'].shape[2:]
+
+        def test_recurrent(self):
+            def _gen_data(np, x):
+                data = {}
+                data['ob'] = x*torch.ones(size=(np,1,84,84))
+                data['ac'] = torch.zeros(size=(np,1))
+                data['r'] = torch.zeros(size=(np,1))
+                data['mask'] = torch.ones(size=(np,1))
+                data['vpred'] = x*torch.ones(size=(np,1))
+                data['logp'] = torch.zeros(size=(np,1))
+                data['state'] = torch.zeros(size=(np,5))
+                return data
+            r = RolloutStorage(10, 4, other_keys=['logp'], recurrent_state_keys=['state'])
+            for i in range(10):
+                r.insert(_gen_data(4,i))
+                if i < 9:
+                    try:
+                        r.recurrent_generator(2)
+                        assert False
+                    except:
+                        pass
+            r.compute_targets(torch.ones(size=(4,1)), torch.ones(size=(4,1)), gamma=0.99, use_gae=True, lambda_=1.0)
+            for batch in r.recurrent_generator(2):
+                assert batch['ob'].shape == (20,1,84,84)
+                assert batch['atarg'].shape == (20,1)
+                assert batch['vtarg'].shape == (20,1)
+                assert batch['mask'].shape == (20,1)
+                assert batch['r'].shape == (20,1)
+                assert batch['state'].shape == (2,5)
+
+
+
     unittest.main()

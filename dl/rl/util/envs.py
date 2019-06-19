@@ -2,7 +2,6 @@ from baselines.common.atari_wrappers import *
 from gym import ObservationWrapper, Wrapper, ActionWrapper
 from baselines.common.vec_env import VecEnvWrapper
 from gym.spaces import Box
-from dl.util import Monitor
 from dl.util import logger
 import gin, os, time
 import torch
@@ -132,7 +131,6 @@ def atari_env(game_name, seed=0, rank=0, sticky_actions=False, timelimit=True, n
         env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=frameskip)
     env.seed(seed + rank)
-    env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
     env = wrap_deepmind(env, episode_life=episode_life, clip_rewards=clip_rewards, frame_stack=False, scale=scale) # call frame stack after transpose
     env = ImageTranspose(env)
     if frame_stack > 1:
@@ -141,33 +139,32 @@ def atari_env(game_name, seed=0, rank=0, sticky_actions=False, timelimit=True, n
 
 @gin.configurable(blacklist=['rank'])
 def make_env(env_id, rank=0):
-    return Monitor(gym.make(env_id), logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-
-
-import unittest
-
-class TestAtari(unittest.TestCase):
-    def testWrapper(self):
-        env = atari_env('Pong', 0, 0, sticky_actions=True)
-        assert env.spec.id == 'PongNoFrameskip-v0'
-        assert env.observation_space.shape == (1,84,84)
-        assert env.reset().shape == (1,84,84)
-        env.close()
-        logger.reset()
-        env = atari_env('Breakout', 0, 0, sticky_actions=False)
-        assert env.spec.id == 'BreakoutNoFrameskip-v4'
-        assert env.observation_space.shape == (1,84,84)
-        assert env.reset().shape == (1,84,84)
-        env.close()
-        logger.reset()
-        env = atari_env('Breakout', 0, 0, sticky_actions=False, frame_stack=4)
-        assert env.spec.id == 'BreakoutNoFrameskip-v4'
-        assert env.observation_space.shape == (4,84,84)
-        assert env.reset().shape == (4,84,84)
-        env.close()
-        logger.reset()
-
+    env = gym.make(env_id)
+    env.seed(rank)
+    return env
 
 
 if __name__ == '__main__':
+    import unittest
+
+    class TestAtari(unittest.TestCase):
+        def testWrapper(self):
+            env = atari_env('Pong', 0, 0, sticky_actions=True)
+            assert env.spec.id == 'PongNoFrameskip-v0'
+            assert env.observation_space.shape == (1,84,84)
+            assert env.reset().shape == (1,84,84)
+            env.close()
+            env = atari_env('Breakout', 0, 0, sticky_actions=False)
+            assert env.spec.id == 'BreakoutNoFrameskip-v4'
+            assert env.observation_space.shape == (1,84,84)
+            assert env.reset().shape == (1,84,84)
+            env.close()
+            env = atari_env('Breakout', 0, 0, sticky_actions=False, frame_stack=4)
+            assert env.spec.id == 'BreakoutNoFrameskip-v4'
+            assert env.observation_space.shape == (4,84,84)
+            assert env.reset().shape == (4,84,84)
+            env.close()
+
+
+
     unittest.main()

@@ -68,70 +68,70 @@ class Checkpointer():
 """
 Unit Tests
 """
-
-import unittest
-from shutil import rmtree
-
-class TestCheckpointer(unittest.TestCase):
-    def test(self):
-        ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=2, min_ckpt_period=10)
-        for t in range(100):
-            ckptr.save({'test': t},  t)
-
-        assert ckptr.load()['test'] == 99
-
-        assert ckptr.ckpts() == [0,10,20,30,40,50,60,70,80,90,98,99]
-        for t in [0,10,50]:
-            assert ckptr.load(t)['test'] == t
-
-        try:
-            ckptr.load(5)
-            assert False
-        except:
-            pass
-
-        try:
-            ckptr.save({'test': 1},  1)
-            assert False
-        except:
-            pass
-
-        rmtree('.test_ckpt_dir')
-
-        ckptr = Checkpointer('./.test_ckpt_dir')
-        for t in range(100):
-            ckptr.save({'test': t},  t)
-        for t in range(100):
-            assert os.path.exists(ckptr.get_ckpt_path(t))
-        rmtree('.test_ckpt_dir')
-
-        ckptr = Checkpointer('./.test_ckpt_dir', min_ckpt_period=10)
-        for t in range(100):
-            ckptr.save({'test': t},  t)
-        for t in range(100):
-            assert os.path.exists(ckptr.get_ckpt_path(t))
-        rmtree('.test_ckpt_dir')
-
-        ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=3)
-        for t in range(100):
-            ckptr.save({'test': t},  t)
-        assert ckptr.ckpts() == [97,98,99]
-        rmtree('.test_ckpt_dir')
-
-    def test_rng(self):
-        ckptr = Checkpointer('./.test_ckpt_dir')
-        rng.seed(0)
-        ckptr.save({'test': 1},  1)
-        r1 = np.random.rand(10)
-        ckptr.load(1)
-        r2 = np.random.rand(10)
-        assert np.allclose(r1, r2)
-        ckptr.load(1, restore_rng_state=False)
-        r2 = np.random.rand(10)
-        assert not np.allclose(r1, r2)
-        rmtree('.test_ckpt_dir')
-
-
-
 if __name__=='__main__':
+
+    import unittest
+    from shutil import rmtree
+
+    class TestCheckpointer(unittest.TestCase):
+        def test(self):
+            ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=2, min_ckpt_period=10)
+            for t in range(100):
+                ckptr.save({'test': t},  t)
+
+            assert ckptr.load()['test'] == 99
+
+            assert ckptr.ckpts() == [0,10,20,30,40,50,60,70,80,90,98,99]
+            for t in [0,10,50]:
+                assert ckptr.load(t)['test'] == t
+
+            try:
+                ckptr.load(5)
+                assert False
+            except:
+                pass
+
+            try:
+                ckptr.save({'test': 1},  1)
+                assert False
+            except:
+                pass
+
+            rmtree('.test_ckpt_dir')
+
+            ckptr = Checkpointer('./.test_ckpt_dir')
+            for t in range(100):
+                ckptr.save({'test': t},  t)
+            for t in range(100):
+                assert os.path.exists(ckptr.get_ckpt_path(t))
+            rmtree('.test_ckpt_dir')
+
+            ckptr = Checkpointer('./.test_ckpt_dir', min_ckpt_period=10)
+            for t in range(100):
+                ckptr.save({'test': t},  t)
+            for t in range(100):
+                assert os.path.exists(ckptr.get_ckpt_path(t))
+            rmtree('.test_ckpt_dir')
+
+            ckptr = Checkpointer('./.test_ckpt_dir', max_ckpts_to_keep=3)
+            for t in range(100):
+                ckptr.save({'test': t},  t)
+            assert ckptr.ckpts() == [97,98,99]
+            rmtree('.test_ckpt_dir')
+
+        def test_rng(self):
+            ckptr = Checkpointer('./.test_ckpt_dir')
+            rng.seed(0)
+            ckptr.save({'test': 1},  1)
+            r1 = np.random.rand(10)
+            ckptr.load(1)
+            r2 = np.random.rand(10)
+            assert np.allclose(r1, r2)
+            ckptr.load(1, restore_rng_state=False)
+            r2 = np.random.rand(10)
+            assert not np.allclose(r1, r2)
+            rmtree('.test_ckpt_dir')
+
+
+
     unittest.main()

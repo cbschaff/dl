@@ -40,3 +40,28 @@ for f in funcs:
         gin.config.external_configurable(f, module='models.detection')
     except:
         pass
+
+transforms = [obj for name,obj in inspect.getmembers(torchvision.transforms) if inspect.isclass(obj)]
+for t in transforms:
+    gin.config.external_configurable(t, module='transforms')
+
+datasets = [obj for name,obj in inspect.getmembers(torchvision.datasets) if inspect.isclass(obj)]
+for d in datasets:
+    gin.config.external_configurable(d, module='datasets')
+
+
+
+
+def load_config(gin_files, gin_bindings=[]):
+    """Loads gin configuration files.
+    Args:
+    gin_files: path or list of paths to the gin configuration files for this
+      experiment.
+    gin_bindings: list, of gin parameter bindings to override the values in
+      the config files.
+    """
+    if isinstance(gin_files, str):
+        gin_files = [gin_files]
+    gin.parse_config_files_and_bindings(gin_files,
+                                        bindings=gin_bindings,
+                                        skip_unknown=False)

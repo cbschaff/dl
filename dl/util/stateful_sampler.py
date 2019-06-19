@@ -57,38 +57,37 @@ class StatefulSampler(TorchSampler.Sampler):
 
 
 
-
-import unittest
-from torch.utils.data import Dataset, DataLoader
-import time
-
-class TestSampler(unittest.TestCase):
-    def test(self):
-        class Dset(Dataset):
-            def __len__(self):
-                return 100
-            def __getitem__(self, i):
-                return i
-
-        data = Dset()
-        sampler = StatefulSampler(data, shuffle=True)
-        dl = DataLoader(data, sampler=sampler, batch_size=2, num_workers=2)
-        used_inds = []
-        diter = dl.__iter__()
-        for _ in range(10):
-            batch = diter.__next__()
-            used_inds.extend(batch.tolist())
-        state = sampler.state_dict(diter)
-
-        sampler = StatefulSampler(data, shuffle=True)
-        sampler.load_state_dict(state)
-        dl = DataLoader(data, sampler=sampler, batch_size=2, num_workers=2)
-        for batch in dl:
-            used_inds.extend(batch.tolist())
-        assert len(used_inds) == 100
-        assert len(set(used_inds)) == 100
-
-
-
 if __name__ == '__main__':
-    unittest.main()
+    import unittest
+    from torch.utils.data import Dataset, DataLoader
+    import time
+
+    class TestSampler(unittest.TestCase):
+        def test(self):
+            class Dset(Dataset):
+                def __len__(self):
+                    return 100
+                def __getitem__(self, i):
+                    return i
+
+            data = Dset()
+            sampler = StatefulSampler(data, shuffle=True)
+            dl = DataLoader(data, sampler=sampler, batch_size=2, num_workers=2)
+            used_inds = []
+            diter = dl.__iter__()
+            for _ in range(10):
+                batch = diter.__next__()
+                used_inds.extend(batch.tolist())
+            state = sampler.state_dict(diter)
+
+            sampler = StatefulSampler(data, shuffle=True)
+            sampler.load_state_dict(state)
+            dl = DataLoader(data, sampler=sampler, batch_size=2, num_workers=2)
+            for batch in dl:
+                used_inds.extend(batch.tolist())
+            assert len(used_inds) == 100
+            assert len(set(used_inds)) == 100
+
+
+
+        unittest.main()

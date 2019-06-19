@@ -1,10 +1,12 @@
 """
-Change baselines logger to append to log files.
+Global Tensorboard writer.
 """
 from torch.utils.tensorboard import SummaryWriter
 import torch
 import os, time, json
 
+def log(out):
+    print(out)
 
 WRITER = None
 
@@ -15,9 +17,13 @@ def configure(logdir, **kwargs):
 def get_summary_writer():
     return WRITER
 
+def get_dir():
+    return None if WRITER is None else WRITER.log_dir
+
+
 class TBWriter(SummaryWriter):
     def __init__(self, logdir, *args, **kwargs):
-        super().__init__(logdir, logdir, *args, **kwargs)
+        super().__init__(logdir, *args, **kwargs)
         self.last_flush = time.time()
         self.scalar_dict = {}
 
@@ -52,42 +58,22 @@ class TBWriter(SummaryWriter):
         global_step  = self._scalarize(global_step)
         walltime     = self._scalarize(walltime)
         super().add_scalar(tag, scalar_value, global_step, walltime)
-        # change interface so both add_scalar and add_scalars adds to the scalar dict.
-        self._append_to_scalar_dict(tag, scalar_value, global_step, walltime)
         self.flush(force=False)
 
     def add_scalars(self, main_tag, tag_scalar_dict, global_step=None, walltime=None):
+        for k,v in tag_scalar_dict.items():
+            tag_scalar_dict[k] = self._scalarize(v)
+        global_step  = self._scalarize(global_step)
+        walltime     = self._scalarize(walltime)
         super().add_scalars(main_tag, tag_scalar_dict, global_step, walltime)
-        # edit scalar_dict
-        fw_logdir = self._get_file_writer().get_logdir()
-        for tag,value in tag_scalar_dict.items():
-            fwtag = fw_logdir + "/" + main_tag + "/" + tag
-            new_tag = main_tag + "/" + tag
-            del self.scalar_dict[fwtag]
-            self._append_to_scalar_dict(new_tag, value, global_step, walltime)
+        self.flush(force=False)
 
 
     def _append_to_scalar_dict(self, tag, scalar_value, global_step, walltime):
-        if not tag in self.scalar_dict:
-            self.scalar_dict[tag] = {'value': [], 'step': [], 'time': []}
-        self.scalar_dict[tag]['value'].append(scalar_value)
-        self.scalar_dict[tag]['step'].append(global_step)
-        self.scalar_dict[tag]['time'].append(walltime)
-
-    def export_scalars(self, fname, overwrite=False):
-        os.makedirs(os.path.join(self.log_dir, 'scalar_data'), exist_ok=True)
-        if fname[-4:] != 'json':
-            fname += '.json'
-        fname = os.path.join(self.log_dir, 'scalar_data', fname)
-        i = 1
-        while not overwrite and os.path.exists(fname):
-            fname = fname.rsplit('.',1)[0] + f'_{i}.json'
-            i += 1
-        with open(fname, 'w') as f:
-            json.dump(self.scalar_dict, f)
-
-        self.flush(force=True)
-        self.scalar_dict = {}
+        """
+        Disable scalar dict. Data will be fetched from tb logs when needed.
+        """
+        pass
 
 
 def add_scalar(*args, **kwargs):
@@ -133,12 +119,17 @@ def add_graph(*args, **kwargs):
     WRITER.add_graph(*args, **kwargs)
     WRITER.flush(force=True)
 
-def export_scalars(fname, overwrite=False):
-    WRITER.export_scalars(fname, overwrite=overwrite)
+def flush():
+    assert WRITER is not None, "call configure to initialize SummaryWriter"
+    WRITER.flush(force=True)
 
+def close():
+    global WRITER
+    if WRITER is not None:
+        WRITER.flush(force=True)
+        WRITER.close()
+        WRITER = None
 
-def log(out):
-    print(out)
 
 ######################
 # Decorators

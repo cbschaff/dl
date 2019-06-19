@@ -1,0 +1,43 @@
+import dl.examples.mnist
+
+
+train.Trainer = @MNISTTrainer
+
+optim.Adam.lr    = 0.001
+optim.Adam.betas = (0.9, 0.999)
+optim.Adam.eps   = 1e-8
+
+Trainer.opt           = @optim.Adam
+Trainer.model         = @MNISTNet()
+Trainer.dataset_train = @train/datasets.MNIST()
+Trainer.dataset_val   = @val/datasets.MNIST()
+Trainer.batch_size    = 32
+Trainer.shuffle       = True
+Trainer.num_workers   = 4
+Trainer.maxt          = 5
+Trainer.seed          = 0
+Trainer.eval          = True
+Trainer.eval_period   = 1
+Trainer.save_period   = 1
+
+Checkpointer.min_ckpt_period = 10
+Checkpointer.max_ckpts_to_keep = 1
+
+
+models.alexnet.pretrained  = False
+models.alexnet.num_classes = 10
+
+train/datasets.MNIST.root     = './data_train'
+train/datasets.MNIST.download = True
+
+val/datasets.MNIST.root     = './data_val'
+val/datasets.MNIST.download = True
+
+datasets.MNIST.transform = @transforms.Compose()
+transforms.Compose.transforms = [
+                                    @transforms.ToTensor(),
+                                    @transforms.Normalize()
+                                ]
+
+transforms.Normalize.mean = (0.1307,)
+transforms.Normalize.std  = (0.3081,)

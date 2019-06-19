@@ -2,9 +2,9 @@
 Modified from OpenAI baselines.
 https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
 """
-from dl.util import ReplayBuffer
-from dl.util.segment_tree import SumSegmentTree, MinSegmentTree
-from dl.util.buffer import sample_n_unique
+from dl.rl.util import ReplayBuffer
+from dl.rl.util.segment_tree import SumSegmentTree, MinSegmentTree
+from dl.rl.util.buffer import sample_n_unique
 import random
 
 
@@ -147,96 +147,103 @@ class PrioritizedReplayBuffer(object):
     def load_state_dict(self, state_dict):
         self.buffer.load_state_dict(state_dict)
         self._max_priority = state_dict['_max_priority']
-        self._it_sum = state_dict['_it_sum'][None][0]
-        self._it_min = state_dict['_it_min'][None][0]
+        if hasattr(state_dict['_it_sum'], 'item'):
+            self._it_sum = state_dict['_it_sum'].item()
+        else:
+            self._it_sum = state_dict['_it_sum']
+        if hasattr(state_dict['_it_min'], 'item'):
+            self._it_min = state_dict['_it_min'].item()
+        else:
+            self._it_min = state_dict['_it_min']
 
 
 
 """
 Unit Tests
 """
-
-import unittest
-import gym, numpy as np
-
-class TestPrioritizedBuffer(unittest.TestCase):
-    def test(self):
-        buffer = ReplayBuffer(10, 4)
-        buffer = PrioritizedReplayBuffer(buffer, alpha=0.5)
-        env = gym.make('PongNoFrameskip-v4')
-        init_obs = env.reset()
-        idx = buffer.store_frame(init_obs)
-        assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
-        for i in range(10):
-            ac = env.action_space.sample()
-            obs, r, done, _ = env.step(ac)
-            buffer.store_effect(idx, ac, r, done)
-            idx = buffer.store_frame(obs)
-
-        # Check sample shapes
-        s = buffer.sample(2, beta=1.)
-        assert len(s) == 7
-        assert s[0].shape == (2,12,210,160)
-        assert s[3].shape == (2,12,210,160)
-        s = buffer._encode_sample([4,5])
-        # Check observation stacking
-        assert np.allclose(s[0][0][-3:],   s[3][0][-6:-3])
-        assert np.allclose(s[0][0][-6:-3], s[3][0][-9:-6])
-        assert np.allclose(s[0][0][-9:-6], s[3][0][:3])
-
-        # Check sequential samples
-        assert np.allclose(s[0][0][-3:],   s[0][1][-6:-3])
-
-        # check priorities
-        buffer.update_priorities([4,5],[0.5,2])
-        assert buffer._it_sum[4] == 0.5 ** buffer._alpha
-        assert buffer._it_sum[5] == 1.0 ** buffer._alpha
-        assert buffer._it_min[4] == 0.5 ** buffer._alpha
-        assert buffer._it_min[5] == 1.0 ** buffer._alpha
-        assert buffer._max_priority == 1.0
-
-
-        # Check for wrap around when buffer is full
-        s = buffer._encode_sample([0])
-        assert not np.allclose(s[0][0][:-3], 0)
-
-        # Check saving and loading
-        state = buffer.state_dict()
-        buffer2 = ReplayBuffer(10, 4)
-        buffer2 = PrioritizedReplayBuffer(buffer2, alpha=0.5)
-        buffer2.load_state_dict(state)
-
-        s1 = buffer._encode_sample([1,3,5])
-        s2 = buffer2._encode_sample([1,3,5])
-        for i,x in enumerate(s1):
-            assert np.allclose(x, s2[i])
-
-
-        for i in range(10):
-            ac = env.action_space.sample()
-            obs, r, done, _ = env.step(ac)
-            buffer.store_effect(idx, ac, r, done)
-            buffer2.store_effect(idx, ac, r, done)
-            idx = buffer.store_frame(obs)
-            idx2 = buffer2.store_frame(obs)
-            assert idx == idx2
-            assert buffer._max_priority == buffer2._max_priority
-
-        s1 = buffer._encode_sample([1,3,5])
-        s2 = buffer2._encode_sample([1,3,5])
-        for i,x in enumerate(s1):
-            assert np.allclose(x, s2[i])
-
-        buffer.update_priorities([4,5],[0.1,0.9])
-        buffer2.update_priorities([4,5],[0.1,0.9])
-        assert buffer._max_priority == buffer2._max_priority
-        assert buffer._it_sum[4] == buffer2._it_sum[4]
-        assert buffer._it_sum[5] == buffer2._it_sum[5]
-
-
-
-
-
-
 if __name__=='__main__':
+
+    import unittest
+    import gym, numpy as np
+    from dl.rl.util import atari_env
+
+    class TestPrioritizedBuffer(unittest.TestCase):
+        def test(self):
+            buffer = ReplayBuffer(10, 4)
+            buffer = PrioritizedReplayBuffer(buffer, alpha=0.5)
+            env = atari_env('Pong')
+            init_obs = env.reset()
+            idx = buffer.store_frame(init_obs)
+            assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
+            for i in range(10):
+                ac = env.action_space.sample()
+                obs, r, done, _ = env.step(ac)
+                buffer.store_effect(idx, ac, r, done)
+                idx = buffer.store_frame(obs)
+
+            # Check sample shapes
+            s = buffer.sample(2, beta=1.)
+            assert len(s) == 7
+            assert s[0].shape == (2,4,84,84)
+            assert s[3].shape == (2,4,84,84)
+            s = buffer._encode_sample([4,5])
+            # Check observation stacking
+            assert np.allclose(s[0][0][3], s[3][0][2])
+            assert np.allclose(s[0][0][2], s[3][0][1])
+            assert np.allclose(s[0][0][1], s[3][0][0])
+
+            # Check sequential samples
+            assert np.allclose(s[0][0][3],   s[0][1][2])
+
+            # check priorities
+            buffer.update_priorities([4,5],[0.5,2])
+            assert buffer._it_sum[4] == 0.5 ** buffer._alpha
+            assert buffer._it_sum[5] == 1.0 ** buffer._alpha
+            assert buffer._it_min[4] == 0.5 ** buffer._alpha
+            assert buffer._it_min[5] == 1.0 ** buffer._alpha
+            assert buffer._max_priority == 1.0
+
+
+            # Check for wrap around when buffer is full
+            s = buffer._encode_sample([0])
+            assert not np.allclose(s[0][0][:-3], 0)
+
+            # Check saving and loading
+            state = buffer.state_dict()
+            buffer2 = ReplayBuffer(10, 4)
+            buffer2 = PrioritizedReplayBuffer(buffer2, alpha=0.5)
+            buffer2.load_state_dict(state)
+
+            s1 = buffer._encode_sample([1,3,5])
+            s2 = buffer2._encode_sample([1,3,5])
+            for i,x in enumerate(s1):
+                assert np.allclose(x, s2[i])
+
+
+            for i in range(10):
+                ac = env.action_space.sample()
+                obs, r, done, _ = env.step(ac)
+                buffer.store_effect(idx, ac, r, done)
+                buffer2.store_effect(idx, ac, r, done)
+                idx = buffer.store_frame(obs)
+                idx2 = buffer2.store_frame(obs)
+                assert idx == idx2
+                assert buffer._max_priority == buffer2._max_priority
+
+            s1 = buffer._encode_sample([1,3,5])
+            s2 = buffer2._encode_sample([1,3,5])
+            for i,x in enumerate(s1):
+                assert np.allclose(x, s2[i])
+
+            buffer.update_priorities([4,5],[0.1,0.9])
+            buffer2.update_priorities([4,5],[0.1,0.9])
+            assert buffer._max_priority == buffer2._max_priority
+            assert buffer._it_sum[4] == buffer2._it_sum[4]
+            assert buffer._it_sum[5] == buffer2._it_sum[5]
+
+
+
+
+
+
     unittest.main()

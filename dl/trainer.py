@@ -1,136 +1,214 @@
-import gin, os, time
-from dl.util import Checkpointer, logger, rng
+import torch
+from dl import BaseTrainer
+from dl.util import StatefulSampler
+from torch.utils.data import DataLoader
+from dl import logger
+import gin, time
+import numpy as np
+
 
 @gin.configurable(blacklist=['logdir'])
-class Trainer(object):
-    """
-    Base class for training ML models. Subclasses should implement, the step,
-    evaluate, state_dict, and load_state_dict methods of this class.
-    The train method uses as special instance variable, self.t, to keep track
-    of the current timestep. The step method should increment this variable.
-    Args:
-        logdir (str):
-            The base directory for the training run.
-        seed (int):
-            The initial seed of this experiment.
-        eval (bool):
-            Whether or not to evaluate the model throughout training.
-        eval_period (int):
-            The period with which the model is evaluated.
-        save_period (int):
-            The period with which the model is saved.
-        maxt (int):
-            The maximum number of timesteps to train the model.
-        maxseconds (float):
-            The maximum amount of time to train the model.
-    """
-    def __init__(self, logdir, seed=0, eval=False, eval_period=None, save_period=None, maxt=None, maxseconds=None):
-        self.logdir = logdir
-        self.ckptr = Checkpointer(os.path.join(self.logdir, 'ckpts'))
-        self.eval = eval
-        self.eval_period = eval_period
-        self.save_period = save_period
-        self.maxt = maxt
-        self.seed = seed
-        self.maxseconds = maxseconds
-        logger.configure(logdir)
-
-        self.t = 0
-        rng.seed(seed)
-
-    def step(self):
-        raise NotImplementedError
-
-    def evaluate(self):
-        raise NotImplementedError
+class Trainer(BaseTrainer):
+    def __init__(self,
+                 logdir,
+                 model,
+                 opt,
+                 dataset_train,
+                 dataset_val=None,
+                 batch_size=1,
+                 shuffle=True,
+                 num_workers=4,
+                 gpu=True,
+                 **trainer_kwargs
+                ):
+        super().__init__(logdir, **trainer_kwargs)
+        self.model = model
+        self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+        self.opt = opt(self.model.parameters())
+        self._dsize = len(dataset_train)
+        self.batch_size = batch_size
+        self._sampler = StatefulSampler(dataset_train, shuffle=shuffle)
+        self.dtrain = DataLoader(dataset_train, sampler=self._sampler, batch_size=batch_size, num_workers=num_workers)
+        if dataset_val is None:
+            self.dval = None
+        else:
+            self.dval = DataLoader(dataset_val, batch_size=batch_size, num_workers=num_workers, shuffle=False)
+        self._diter = None
+        self._nsamples = 0
 
     def state_dict(self):
-        raise NotImplementedError
+        return {
+            'model': self.model.state_dict(),
+            'opt': self.opt.state_dict(),
+            'sampler': self._sampler.state_dict(self._diter),
+            't': self.t,
+            'nsamples': self._nsamples,
+        }
 
-    def load_state_dict(self):
-        raise NotImplementedError
+    def load_state_dict(self, state_dict):
+        if self._diter is not None:
+            self._diter.__del__()
+            self._diter = None
+        self.model.load_state_dict(state_dict['model'])
+        self.opt.load_state_dict(state_dict['opt'])
+        self._sampler.load_state_dict(state_dict['sampler'])
+        self.t = state_dict['t']
+        self._nsamples = state_dict['nsamples']
 
-    def save(self):
-        self.ckptr.save(self.state_dict(), self.t)
-
-    def load(self, t=None):
-        self.load_state_dict(self.ckptr.load(t))
-
-    def train(self):
-        config = gin.operative_config_str()
-        logger.log("=================== CONFIG ===================")
-        logger.log(config)
-        with open(os.path.join(self.logdir, 'config.gin'), 'w') as f:
-            f.write(config)
-        self.time_start = time.monotonic()
-        if len(self.ckptr.ckpts()) > 0:
-            self.load()
-        if self.t == 0:
-            cstr = config.replace('\n', '  \n')
-            cstr = cstr.replace('#', '\\#')
-            logger.add_text('config', cstr, 0, time.time())
-        if self.maxt and self.t > self.maxt:
-            return
-        if self.save_period:
-            last_save = (self.t // self.save_period) * self.save_period
-        if self.eval_period:
-            last_eval = (self.t // self.eval_period) * self.eval_period
-
+    def step(self):
+        self.model.train()
+        if self._diter is None:
+            self._diter = self.dtrain.__iter__()
         try:
-            while True:
-                if self.maxt and self.t >= self.maxt:
-                    break
-                if self.maxseconds and time.monotonic() - self.time_start >= self.maxseconds:
-                    break
-                self.step()
-                if self.save_period and (self.t - last_save) >= self.save_period:
-                    self.save()
-                    last_save = self.t
-                if self.eval and (self.t - last_eval) >= self.eval_period:
-                    self.evaluate()
-                    last_eval = self.t
-        except KeyboardInterrupt:
-            logger.log("Caught Ctrl-C. Saving model and exiting...")
-        self.save()
-        logger.export_scalars(self.ckptr.format.format(self.t) + '.json')
-        self.close()
+            batch = self._diter.__next__()
+        except StopIteration:
+            self.t += 1
+            self._diter = None
+            return
+        self.opt.zero_grad()
+        loss = self._handle_loss(self.loss(self._batch_to_device(batch)))
+        loss.backward()
+        self.opt.step()
+        self._nsamples += min(self._dsize - (self._nsamples % self._dsize), self.batch_size)
+
+    def _handle_loss(self, loss):
+        if isinstance(loss, torch.Tensor):
+            logger.add_scalar('train_loss/total', loss.detach().cpu().numpy(), self._nsamples, time.time())
+            return loss
+        else:
+            assert isinstance(loss, dict), "The return value of loss() must be a Tensor or a dict"
+            for k in loss:
+                logger.add_scalar(f'train_loss/{k}', loss[k].detach().cpu().numpy(), self._nsamples, time.time())
+            return loss['total']
+
+    def _batch_to_device(self, batch):
+        if isinstance(batch, torch.Tensor):
+            return batch.to(self.device)
+        elif isinstance(batch, dict):
+            return {k:v.to(self.device) for k,v in batch.items()}
+        else:
+            return [b.to(self.device) for b in batch]
+
+    def evaluate(self):
+        if self.dval is None:
+            return
+
+        def _append_to_dict(d, x):
+            for k in x:
+                if k not in d:
+                    d[k] = []
+                d[k].append(x[k].cpu().numpy())
+
+        self.model.eval()
+        losses = {'total':[]}
+        metrics = {}
+        with torch.no_grad():
+            for batch in self.dval:
+                batch = self._batch_to_device(batch)
+                loss = self.loss(batch)
+                if isinstance(loss, torch.Tensor):
+                    losses['total'].append(loss.cpu().numpy())
+                else:
+                    _append_to_dict(losses, loss)
+                _append_to_dict(metrics, self.metrics(batch))
+            self.visualization(self.dval)
+
+        for k in losses:
+            avg = np.mean(losses[k])
+            logger.add_scalar(f'val_loss/{k}', avg, self.t, time.time())
+        for k in metrics:
+            avg = np.mean(metrics[k])
+            logger.add_scalar(f'val_metrics/{k}', avg, self.t, time.time())
 
     def close(self):
+        if self._diter is not None:
+            self._diter.__del__()
+            self._diter = None
+
+
+
+    def loss(self, batch):
+        """
+        Computes the loss for a given minibatch.
+        Args:
+            batch: a minibatch from the training dataset
+        Returns:
+            A scalar tensor for the loss
+            OR
+            A dict of scalar tensors containing the key "total" which will be
+            used for backpropegation. Other keys will be logged to tensorboard.
+        """
+        raise NotImplementedError
+
+    def metrics(self, batch):
+        """
+        Computes scalar metrics for a given minibatch. (i.e. accuracy)
+        Args:
+            batch: a minibatch from the validation dataset
+        Returns:
+            A dict of scalar tensors.
+        """
+        return {}
+
+    def visualization(self, dval):
+        """
+        A place for aribtrary visualization. This will be called
+        during each evaluation.
+        Args:
+            dval: DataLoader for the validation dataset
+        Returns:
+            Return value is unused. Any logging must be done in this function
+        """
         pass
 
 
 
-import unittest,shutil
-
-class TestTrainer(unittest.TestCase):
-    def test(self):
-        class T(Trainer):
-            def step(self):
-                self.t += 1
-            def evaluate(self):
-                assert self.t % self.eval_period == 0
-            def state_dict(self):
-                if self.maxt is None or self.t < self.maxt:
-                    if self.maxseconds is None:
-                        assert self.t % self.save_period == 0
-                return {'t': self.t}
-            def load_state_dict(self, state_dict):
-                self.t = state_dict['t']
-
-        trainer = T('logs', eval=True, eval_period=50, save_period=100, maxt=1000)
-        trainer.train()
-        shutil.rmtree('logs')
-        trainer = T('logs', eval=True, eval_period=50, save_period=100, maxseconds=2)
-        trainer.train()
-        c = trainer.ckptr.ckpts()
-        trainer2 = T('logs', eval=True, eval_period=50, save_period=100, maxseconds=1)
-        trainer.train()
-        c2 = trainer2.ckptr.ckpts()
-        for x in c:
-            assert x in c2
-        assert len(c2) > len(c)
-        shutil.rmtree('logs')
-
-
 if __name__ == '__main__':
+
+    import unittest, shutil
+    from torch.utils.data import Dataset
+    import numpy as np
+
+    class TestTrainer(unittest.TestCase):
+        def test(self):
+            class T(Trainer):
+                def loss(self, batch):
+                    _l = torch.nn.CrossEntropyLoss()
+                    out = self.model(batch['x'])
+                    assert out.shape == (4,10)
+                    assert batch['y'].shape == (4,)
+                    l1 = _l(out, batch['y'])
+                    return {'total': 3*l1, 'l1': l1, 'l2': 2*l1}
+
+                def metrics(self, batch):
+                    out = self.model(batch['x'])
+                    _, yhat = out.max(dim=1)
+                    acc = (yhat == batch['y'])
+                    return {'accuracy': acc}
+
+                def visualization(self, dval):
+                    img = torch.from_numpy(255 * np.random.rand(3,10,10)).byte()
+                    logger.add_image('viz1', img, self.t, time.time())
+
+
+            class D(Dataset):
+                def __len__(self):
+                    return 100
+                def __getitem__(self, ind):
+                    x = torch.from_numpy(np.array([ind])).float()
+                    y = torch.from_numpy(np.array(ind)).long() // 10
+                    assert x.shape == (1,) and y.shape == ()
+                    return {'x':x, 'y':y}
+
+            from dl.modules import FeedForwardNet
+            model = FeedForwardNet(1, [32,32,10])
+            dtrain = D()
+            dval = D()
+
+            trainer = T('test', model, torch.optim.Adam, dtrain, dval, 4, eval=True, eval_period=1, maxt=10)
+            trainer.train()
+
+            shutil.rmtree('test')
+
     unittest.main()
