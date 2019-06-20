@@ -2,10 +2,14 @@ import gin, os, time
 from dl import Checkpointer, logger, rng
 
 @gin.configurable(blacklist=['logdir'])
-class BaseTrainer(object):
+class Trainer(object):
     """
-    Base class for training ML models. Subclasses should implement, the step,
-    evaluate, state_dict, and load_state_dict methods of this class.
+    Base class for training ML models. It implements checkpointing, seeding,
+    saving/loading random states, and logging of config files.
+
+    Subclasses should implement, the step, evaluate, state_dict,
+    and load_state_dict methods of this class.
+
     The train method uses as special instance variable, self.t, to keep track
     of the current timestep. The step method should increment this variable.
     Args:
@@ -24,7 +28,15 @@ class BaseTrainer(object):
         maxseconds (float):
             The maximum amount of time to train the model.
     """
-    def __init__(self, logdir, seed=0, eval=False, eval_period=None, save_period=None, maxt=None, maxseconds=None):
+    def __init__(self,
+                 logdir,
+                 seed=0,
+                 eval=False,
+                 eval_period=None,
+                 save_period=None,
+                 maxt=None,
+                 maxseconds=None
+                ):
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(self.logdir, 'ckpts'))
         self.eval = eval
@@ -51,10 +63,19 @@ class BaseTrainer(object):
         raise NotImplementedError
 
     def save(self):
-        self.ckptr.save(self.state_dict(), self.t)
+        self._save(self.state_dict())
+
+    def _save(self, state_dict):
+        assert '_rng' not in state_dict, "'_rng' key is used to save random states. Please change your key."
+        state_dict['_rng'] = rng.get_state()
+        self.ckptr.save(state_dict, self.t)
 
     def load(self, t=None):
-        self.load_state_dict(self.ckptr.load(t))
+        self._load(self.ckptr.load(t))
+
+    def _load(self, state_dict):
+        rng.set_state(state_dict['_rng'])
+        self.load_state_dict(state_dict)
 
     def train(self):
         config = gin.operative_config_str()
@@ -103,22 +124,24 @@ class BaseTrainer(object):
 if __name__ == '__main__':
 
     import unittest,shutil
+    import numpy as np
+
+    class T(Trainer):
+        def step(self):
+            self.t += 1
+        def evaluate(self):
+            assert self.t % self.eval_period == 0
+        def state_dict(self):
+            if self.maxt is None or self.t < self.maxt:
+                if self.maxseconds is None:
+                    assert self.t % self.save_period == 0
+            return {'t': self.t}
+        def load_state_dict(self, state_dict):
+            self.t = state_dict['t']
 
     class TestTrainer(unittest.TestCase):
-        def test(self):
-            class T(BaseTrainer):
-                def step(self):
-                    self.t += 1
-                def evaluate(self):
-                    assert self.t % self.eval_period == 0
-                def state_dict(self):
-                    if self.maxt is None or self.t < self.maxt:
-                        if self.maxseconds is None:
-                            assert self.t % self.save_period == 0
-                    return {'t': self.t}
-                def load_state_dict(self, state_dict):
-                    self.t = state_dict['t']
 
+        def test(self):
             trainer = T('logs', eval=True, eval_period=50, save_period=100, maxt=1000)
             trainer.train()
             shutil.rmtree('logs')
@@ -132,6 +155,16 @@ if __name__ == '__main__':
                 assert x in c2
             assert len(c2) > len(c)
             shutil.rmtree('logs')
+
+        def test_rng(self):
+            trainer = T('logs', seed=0, save_period=1)
+            trainer.save()
+            r1 = np.random.rand(10)
+            trainer.load()
+            r2 = np.random.rand(10)
+            assert np.allclose(r1, r2)
+            shutil.rmtree('logs')
+
 
 
     unittest.main()

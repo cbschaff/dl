@@ -7,7 +7,7 @@ import numpy as np
 
 
 @gin.configurable
-class MNISTTrainer(dl.Trainer):
+class MNISTTrainer(dl.SingleModelTrainer):
     def before_epoch(self):
         dl.logger.log(f"Starting epoch {self.t}...")
 
@@ -21,7 +21,7 @@ class MNISTTrainer(dl.Trainer):
         _,yhat = torch.max(out, dim=1)
         return {'accuracy': (yhat == batch[1]).float().mean()}
 
-    def visualization(self, dval):
+    def visualization(self):
         confusion_matrix = np.zeros((10,10))
         for batch in self.dval:
             out = self.forward(self.batch_to_device(batch))
