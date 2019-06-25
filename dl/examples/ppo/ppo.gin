@@ -7,6 +7,8 @@ optim.Adam.betas = (0.9, 0.999)
 
 PPO.env_fn = @make_atari_env
 PPO.nenv = 8
+PPO.eval_num_episodes = 20
+PPO.record_num_episodes = 5
 
 PPO.rollout_length = 128
 PPO.batch_size = 32
@@ -26,6 +28,8 @@ PPO.seed = 0
 PPO.eval = True
 PPO.eval_period = 1000000
 PPO.save_period = 1000000
+PPO.maxseconds = None
+PPO.gpu = True
 
 
 Policy.base = @NatureDQN
