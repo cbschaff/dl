@@ -35,7 +35,8 @@ class RolloutStorage(object):
         if self.data is None:
             self.init_data(step_data)
         for k in self.keys:
-            assert step_data[k].shape[0] == self.num_processes, \
+            batch_dim = -2 if k in self.recurrent_state_keys else 0
+            assert step_data[k].shape[batch_dim] == self.num_processes, \
                 f"inserted data is expected to have its first dimension equal to the numper of processes: {self.num_processes}"
             if k in self.recurrent_state_keys and self.step > 0:
                 continue
@@ -84,7 +85,10 @@ class RolloutStorage(object):
         for indices in sampler:
             batch = {}
             for k,v in self.data.items():
-                batch[k] = v[:,indices].view(-1, *v.shape[2:])
+                if k in self.recurrent_state_keys:
+                    batch[k] = v[...,indices,:][0]
+                else:
+                    batch[k] = v[:,indices].view(-1, *v.shape[2:])
             yield batch
 
     def compute_ob_stats(self):

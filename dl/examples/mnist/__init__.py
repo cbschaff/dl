@@ -1,1 +1,1 @@
-from dl.examples.mnist.trainer import MNISTTrainer
+from dl.examples.mnist.trainer import *

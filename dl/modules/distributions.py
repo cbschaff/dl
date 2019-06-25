@@ -11,13 +11,7 @@ Standardize the inferface among distributions.
 
 class CatDist(D.Categorical):
     def mode(self):
-        return self.probs.argmax(dim=-1, keepdim=True)
-
-    def sample(self, *args, **kwargs):
-        return super().sample(*args, **kwargs).unsqueeze(-1)
-
-    def log_prob(self, ac):
-        return super().log_prob(ac.squeeze(-1))
+        return self.probs.argmax(dim=-1)
 
 class Normal(D.Normal):
     def mode(self):

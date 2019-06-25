@@ -17,11 +17,9 @@ class DatasetTrainer(Trainer):
                  batch_size=1,
                  shuffle=True,
                  num_workers=1,
-                 gpu=True,
                  **trainer_kwargs
                 ):
         super().__init__(logdir, **trainer_kwargs)
-        self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         self._dsize = len(dataset_train)
         self.batch_size = batch_size
         self._sampler = StatefulSampler(dataset_train, shuffle=shuffle)
@@ -35,10 +33,8 @@ class DatasetTrainer(Trainer):
 
     def _save(self, state_dict):
         assert '_sampler' not in state_dict, "'_sampler' key is used to save epoch progress. Please change your key."
-        assert '_t' not in state_dict, "'_t' key is used to save number of epochs. Please change your key."
         assert '_nsamples' not in state_dict, "'_nsamples' key is used to save epoch progress. Please change your key."
         state_dict['_sampler'] = self._sampler.state_dict(self._diter)
-        state_dict['_t'] = self.t
         state_dict['_nsamples'] = self.nsamples
         super()._save(state_dict)
 
@@ -48,7 +44,6 @@ class DatasetTrainer(Trainer):
             self._diter.__del__()
             self._diter = None
         self._sampler.load_state_dict(state_dict['_sampler'])
-        self.t = state_dict['_t']
         self.nsamples = state_dict['_nsamples']
         super()._load(state_dict)
 

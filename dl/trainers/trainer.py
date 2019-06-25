@@ -1,5 +1,6 @@
 import gin, os, time
 from dl import Checkpointer, logger, rng
+import torch
 
 @gin.configurable(blacklist=['logdir'])
 class Trainer(object):
@@ -27,6 +28,8 @@ class Trainer(object):
             The maximum number of timesteps to train the model.
         maxseconds (float):
             The maximum amount of time to train the model.
+        gpu (bool):
+            Where training will take place.
     """
     def __init__(self,
                  logdir,
@@ -35,7 +38,8 @@ class Trainer(object):
                  eval_period=None,
                  save_period=None,
                  maxt=None,
-                 maxseconds=None
+                 maxseconds=None,
+                 gpu=True,
                 ):
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(self.logdir, 'ckpts'))
@@ -45,6 +49,7 @@ class Trainer(object):
         self.maxt = maxt
         self.seed = seed
         self.maxseconds = maxseconds
+        self.device = torch.device("cuda:0" if gpu and torch.cuda.is_available() else "cpu")
         logger.configure(os.path.join(logdir, 'tb'))
 
         self.t = 0
@@ -67,7 +72,9 @@ class Trainer(object):
 
     def _save(self, state_dict):
         assert '_rng' not in state_dict, "'_rng' key is used to save random states. Please change your key."
+        assert 't' not in state_dict, "'t' key is used by base Trainer class. Please change your key."
         state_dict['_rng'] = rng.get_state()
+        state_dict['t'] = self.t
         self.ckptr.save(state_dict, self.t)
 
     def load(self, t=None):
@@ -75,6 +82,7 @@ class Trainer(object):
 
     def _load(self, state_dict):
         rng.set_state(state_dict['_rng'])
+        self.t = state_dict['t']
         self.load_state_dict(state_dict)
 
     def train(self):
@@ -135,9 +143,9 @@ if __name__ == '__main__':
             if self.maxt is None or self.t < self.maxt:
                 if self.maxseconds is None:
                     assert self.t % self.save_period == 0
-            return {'t': self.t}
+            return {}
         def load_state_dict(self, state_dict):
-            self.t = state_dict['t']
+            pass
 
     class TestTrainer(unittest.TestCase):
 

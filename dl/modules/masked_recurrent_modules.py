@@ -1,5 +1,5 @@
 """
-Add masking of hidden state for episode termination in RL.
+Add masking of hidden states to RNN Modules.
 Implementation loosely based on
 https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/a2c_ppo_acktr/model.py
 """
@@ -8,7 +8,7 @@ import torch.nn as nn
 
 
 
-class RLRecurrentModule(nn.Module):
+class MaskedRecurrentModule(nn.Module):
     def _get_masked_timesteps(self, mask):
         # Let's figure out which steps in the sequence have a zero for any agent
         # We will always assume t=0 has a zero in it as that makes the logic cleaner
@@ -71,19 +71,19 @@ class RLRecurrentModule(nn.Module):
 
 
 
-class RLRNN(RLRecurrentModule, nn.RNN):
+class MaskedRNN(MaskedRecurrentModule, nn.RNN):
     def __init__(self, *args, **kwargs):
         nn.RNN.__init__(self, *args, **kwargs)
         self._module = nn.RNN.forward
         assert self.batch_first == False, "Time dimension must be first for RL recurrent modules."
 
-class RLLSTM(RLRecurrentModule, nn.LSTM):
+class MaskedLSTM(MaskedRecurrentModule, nn.LSTM):
     def __init__(self, *args, **kwargs):
         nn.LSTM.__init__(self, *args, **kwargs)
         self._module = nn.LSTM.forward
         assert self.batch_first == False, "Time dimension must be first for RL recurrent modules."
 
-class RLGRU(RLRecurrentModule, nn.GRU):
+class MaskedGRU(MaskedRecurrentModule, nn.GRU):
     def __init__(self, *args, **kwargs):
         nn.GRU.__init__(self, *args, **kwargs)
         self._module = nn.GRU.forward
@@ -94,20 +94,20 @@ class RLGRU(RLRecurrentModule, nn.GRU):
 if __name__ == '__main__':
     import unittest
 
-    class TestRLRecurrentModules(unittest.TestCase):
+    class TestMaskedRecurrentModules(unittest.TestCase):
         def test_rnn(self):
             rnn = nn.RNN(5,10,2)
-            rlrnn = RLRNN(5,10,2)
-            rlrnn.load_state_dict(rnn.state_dict())
+            mrnn = MaskedRNN(5,10,2)
+            mrnn.load_state_dict(rnn.state_dict())
             x = torch.ones([5,3,5])
             x1, hx1 = rnn(x)
-            x2, hx2 = rlrnn(x)
+            x2, hx2 = mrnn(x)
             assert torch.allclose(x1,x2)
             assert torch.allclose(hx1,hx2)
 
             mask = torch.Tensor([[0,1,1], [1,1,1], [1,0,1], [1,1,1], [1,1,0]])
             x1, hx1 = rnn(x, hx1)
-            x2, hx2 = rlrnn(x, hx2, mask)
+            x2, hx2 = mrnn(x, hx2, mask)
             for i in range(5):
                 assert not torch.allclose(x1[i,0], x2[i,0])
 
@@ -128,17 +128,17 @@ if __name__ == '__main__':
 
         def test_gru(self):
             rnn = nn.GRU(5,10,2)
-            rlrnn = RLGRU(5,10,2)
-            rlrnn.load_state_dict(rnn.state_dict())
+            mrnn = MaskedGRU(5,10,2)
+            mrnn.load_state_dict(rnn.state_dict())
             x = torch.ones([5,3,5])
             x1, hx1 = rnn(x)
-            x2, hx2 = rlrnn(x)
+            x2, hx2 = mrnn(x)
             assert torch.allclose(x1,x2)
             assert torch.allclose(hx1,hx2)
 
             mask = torch.Tensor([[0,1,1], [1,1,1], [1,0,1], [1,1,1], [1,1,0]])
             x1, hx1 = rnn(x, hx1)
-            x2, hx2 = rlrnn(x, hx2, mask)
+            x2, hx2 = mrnn(x, hx2, mask)
             for i in range(5):
                 assert not torch.allclose(x1[i,0], x2[i,0])
 
@@ -159,18 +159,18 @@ if __name__ == '__main__':
 
         def test_lstm(self):
             rnn = nn.LSTM(5,10,2)
-            rlrnn = RLLSTM(5,10,2)
-            rlrnn.load_state_dict(rnn.state_dict())
+            mrnn = MaskedLSTM(5,10,2)
+            mrnn.load_state_dict(rnn.state_dict())
             x = torch.ones([5,3,5])
             x1, hx1 = rnn(x)
-            x2, hx2 = rlrnn(x)
+            x2, hx2 = mrnn(x)
             assert torch.allclose(x1,x2)
             assert torch.allclose(hx1[0],hx2[0])
             assert torch.allclose(hx1[1],hx2[1])
 
             mask = torch.Tensor([[0,1,1], [1,1,1], [1,0,1], [1,1,1], [1,1,0]])
             x1, hx1 = rnn(x, hx1)
-            x2, hx2 = rlrnn(x, hx2, mask)
+            x2, hx2 = mrnn(x, hx2, mask)
             for i in range(5):
                 assert not torch.allclose(x1[i,0], x2[i,0])
 

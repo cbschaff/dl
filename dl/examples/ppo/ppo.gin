@@ -1,0 +1,42 @@
+import dl.examples.ppo
+
+train.Trainer = @PPO
+
+optim.Adam.lr = 0.00025
+optim.Adam.betas = (0.9, 0.999)
+
+PPO.env_fn = @make_atari_env
+PPO.nenv = 8
+
+PPO.rollout_length = 128
+PPO.batch_size = 32
+PPO.gamma = 0.99
+PPO.lambda_ = 0.95
+PPO.norm_advantages = True
+
+PPO.optimizer = @optim.Adam
+PPO.clip_param = 0.1
+PPO.epochs_per_rollout = 4
+PPO.max_grad_norm = 0.5
+PPO.ent_coef = 0.01
+PPO.vf_coef = 0.5
+
+PPO.maxt = 10000000
+PPO.seed = 0
+PPO.eval = True
+PPO.eval_period = 1000000
+PPO.save_period = 1000000
+
+
+Policy.base = @NatureDQN
+
+Checkpointer.ckpt_period = 1000000
+
+make_atari_env.game_name = "Pong"
+make_atari_env.sticky_actions = False
+make_atari_env.noop = True
+make_atari_env.seed = 0
+make_atari_env.frameskip = 4
+make_atari_env.episode_life = True
+make_atari_env.clip_rewards = True
+make_atari_env.frame_stack = 4
