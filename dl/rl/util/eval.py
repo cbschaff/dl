@@ -10,9 +10,24 @@ import subprocess as sp
 from dl import logger
 import torch
 
-def _act(actor, ob, device):
-    ob = torch.from_numpy(ob).to(device)
-    return actor(ob).action.cpu().numpy()
+class Actor(object):
+    def __init__(self, net, device):
+        self.net = net
+        self.state = None
+        self.device = device
+
+    def __call__(self, ob, dones=None):
+        ob = torch.from_numpy(ob).to(self.device)
+        if dones is None:
+            mask = torch.zeros([ob.shape[0]]).float()
+        else:
+            mask = torch.from_numpy(1. - dones).float()
+        if self.state is None:
+            out = self.net(ob)
+        else:
+            out = self.net(ob, self.state, mask)
+        self.state = out.state_out
+        return out.action.cpu().numpy()
 
 def _wrap_env(env):
     if not isinstance(env, (VecEnv, VecEnvWrapper)):
@@ -40,8 +55,10 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
     ob = env.reset()
     lengths = np.zeros(env.num_envs, dtype=np.int32)
     rewards = np.zeros(env.num_envs, dtype=np.float32)
+    dones = None
+    actor = Actor(actor, device)
     while len(ep_lengths) < nepisodes:
-        obs, rs, dones, infos = env.step(_act(actor, ob, device))
+        obs, rs, dones, infos = env.step(actor(ob, dones))
         rewards += rs
         lengths += 1
         for i,done in enumerate(dones):
@@ -51,6 +68,7 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
                     ep_rewards.append(infos[i]['episode_info']['reward'])
                     lengths[i] = 0
                     rewards[i] = 0.
+                dones[i] = infos[i]['episode_info']['done']
             elif done:
                 ep_lengths.append(int(lengths[i]))
                 ep_rewards.append(float(rewards[i]))
@@ -88,6 +106,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
     tmpdir = os.path.join(tempfile.gettempdir(), 'video_' + str(time.monotonic()))
     os.makedirs(tmpdir)
     id = 0
+    actor = Actor(actor, device)
     for i in range(nepisodes):
         ob = env.reset()
         done = False
@@ -99,7 +118,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
                 return
             imwrite(os.path.join(tmpdir, '{:05d}.png'.format(id)), rgb)
             id += 1
-            ob, r, done, info = env.step(_act(actor, ob[None], device)[0])
+            ob, r, done, info = env.step(actor(ob[None], np.array([done]))[0])
             if 'episode_info' in info:
                 done = info['episode_info']['done']
 
@@ -120,7 +139,7 @@ if __name__ == '__main__':
             env = EpisodeInfo(gym.make('CartPole-v1'))
             def actor(ob):
                 ac = torch.from_numpy(np.array(env.action_space.sample()))[None]
-                return namedtuple('test','action')(action=ac)
+                return namedtuple('test',['action','state_out'])(action=ac, state_out=None)
 
             stats = rl_evaluate(env, actor, 10, outfile='./out.json')
             assert len(stats['episode_lengths']) >= 10
@@ -135,7 +154,7 @@ if __name__ == '__main__':
             env = EpisodeInfo(gym.make('CartPole-v1'))
             def actor(ob):
                 ac = torch.from_numpy(np.array(env.action_space.sample()))[None]
-                return namedtuple('test','action')(action=ac)
+                return namedtuple('test',['action','state_out'])(action=ac, state_out=None)
 
             stats = rl_record(env, actor, 10, './video.mp4')
             os.remove('./video.mp4')
