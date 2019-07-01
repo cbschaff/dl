@@ -37,7 +37,7 @@ Policy.base = @A3CCNN
 
 Checkpointer.ckpt_period = 1000000
 
-make_atari_env.game_name = "Pong"
+make_atari_env.game_name = "Breakout"
 make_atari_env.sticky_actions = False
 make_atari_env.noop = True
 make_atari_env.seed = 0

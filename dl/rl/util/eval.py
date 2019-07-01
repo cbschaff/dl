@@ -19,9 +19,9 @@ class Actor(object):
     def __call__(self, ob, dones=None):
         ob = torch.from_numpy(ob).to(self.device)
         if dones is None:
-            mask = torch.zeros([ob.shape[0]]).float()
+            mask = torch.zeros([ob.shape[0]]).to(self.device).float()
         else:
-            mask = torch.from_numpy(1. - dones).float()
+            mask = torch.from_numpy(1. - dones).to(self.device).float()
         if self.state is None:
             out = self.net(ob)
         else:
@@ -52,13 +52,13 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
     env = _wrap_env(env)
     ep_lengths = []
     ep_rewards = []
-    ob = env.reset()
+    obs = env.reset()
     lengths = np.zeros(env.num_envs, dtype=np.int32)
     rewards = np.zeros(env.num_envs, dtype=np.float32)
     dones = None
     actor = Actor(actor, device)
     while len(ep_lengths) < nepisodes:
-        obs, rs, dones, infos = env.step(actor(ob, dones))
+        obs, rs, dones, infos = env.step(actor(obs, dones))
         rewards += rs
         lengths += 1
         for i,done in enumerate(dones):

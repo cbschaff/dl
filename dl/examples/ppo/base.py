@@ -39,7 +39,7 @@ class A3CRNN(ActorCriticBase):
     Deep network from https://arxiv.org/abs/1602.01783
     """
     def build(self):
-        self.conv1 = nn.Conv2d(4, 16, 8, 4)
+        self.conv1 = nn.Conv2d(1, 16, 8, 4)
         self.conv2 = nn.Conv2d(16, 32, 4, 2)
         shape = self.observation_space.shape[1:]
         for c in [self.conv1, self.conv2]:
@@ -61,6 +61,7 @@ class A3CRNN(ActorCriticBase):
         if state_in is None:
             x, state_out = self.lstm(self.tbf(x))
         else:
-            x, state_out = self.lstm(self.tbf(x, state_in[0]), state_in)
+            mask = self.tbf(mask, state_in[0])
+            x, state_out = self.lstm(self.tbf(x, state_in[0]), state_in, mask)
         x = self.tbf.flatten(x)
-        return self.dist(x), self.vf(x)
+        return self.dist(x), self.vf(x), state_out
