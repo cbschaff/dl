@@ -91,7 +91,7 @@ if __name__ == '__main__':
                             self.env = env
                         def __call__(self, ob):
                             ac = torch.from_numpy(np.array(self.env.action_space.sample()))[None]
-                            return namedtuple('test','action')(action=ac)
+                            return namedtuple('test',['action','state_out'])(action=ac, state_out=None)
                         def train(self):
                             pass
                         def eval(self):
