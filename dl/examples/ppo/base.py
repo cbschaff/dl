@@ -50,6 +50,8 @@ class A3CRNN(ActorCriticBase):
         self.tbf = TimeAndBatchUnflattener()
         self.vf = nn.Linear(256, 1)
         self.dist = Categorical(256, self.action_space.n)
+        nn.init.orthogonal_(self.vf.weight.data, gain=1.0)
+        nn.init.constant_(self.vf.bias.data, 0)
 
     def forward(self, x, state_in=None, mask=None):
         x = (x.float() / 128.) - 1.
