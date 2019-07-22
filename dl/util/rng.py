@@ -24,24 +24,24 @@ def set_state(state):
     random.setstate(state['random'])
 
 
-import unittest
-class TestRandom(unittest.TestCase):
-    def test(self):
-        seed(0)
-        state = get_state()
-        r1 = torch.rand([10])
-        r2 = np.random.rand(10)
-        r3 = [random.random() for _ in range(10)]
-
-        set_state(state)
-        r1_copy = torch.rand([10])
-        r2_copy = np.random.rand(10)
-        r3_copy = [random.random() for _ in range(10)]
-
-        assert np.allclose(r1.numpy(),r1_copy.numpy())
-        assert np.allclose(r2, r2_copy)
-        assert np.allclose(r3, r3_copy)
-
-
 if __name__ == '__main__':
+    import unittest
+    class TestRandom(unittest.TestCase):
+        def test(self):
+            seed(0)
+            state = get_state()
+            r1 = torch.rand([10])
+            r2 = np.random.rand(10)
+            r3 = [random.random() for _ in range(10)]
+
+            set_state(state)
+            r1_copy = torch.rand([10])
+            r2_copy = np.random.rand(10)
+            r3_copy = [random.random() for _ in range(10)]
+
+            assert np.allclose(r1.numpy(),r1_copy.numpy())
+            assert np.allclose(r2, r2_copy)
+            assert np.allclose(r3, r3_copy)
+
+
     unittest.main()

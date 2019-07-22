@@ -11,13 +11,7 @@ Standardize the inferface among distributions.
 
 class CatDist(D.Categorical):
     def mode(self):
-        return self.probs.argmax(dim=-1, keepdim=True)
-
-    def sample(self, *args, **kwargs):
-        return super().sample(*args, **kwargs).unsqueeze(-1)
-
-    def log_prob(self, ac):
-        return super().log_prob(ac.squeeze(-1))
+        return self.probs.argmax(dim=-1)
 
 class Normal(D.Normal):
     def mode(self):
@@ -197,96 +191,96 @@ class TanhDiagGaussian(DiagGaussian):
 
 
 
-import unittest
-
-class TestDistributions(unittest.TestCase):
-    def test_categorical(self):
-        cat = Categorical(10, 2)
-        features = torch.ones(2,10)
-        dist = cat(features)
-        ac = dist.sample()
-        assert ac.requires_grad == False
-        assert ac.shape == (2, 1)
-        assert torch.all(dist.mode()[0] == dist.mode()[1])
-        assert dist.mode().shape == (2, 1)
-        assert dist.log_prob(ac).shape == (2,)
-        assert dist.entropy().shape == (2,)
-
-    def test_normal(self):
-        dg = DiagGaussian(10, 2)
-        features = torch.ones(2,10)
-        dist = dg(features)
-        ac = dist.sample()
-        assert ac.requires_grad == False
-        assert ac.shape == (2, 2)
-        assert torch.all(dist.mode()[0] == dist.mode()[1])
-        assert dist.mode().shape == (2, 2)
-        assert dist.log_prob(ac).shape == (2,)
-        assert dist.entropy().shape == (2,)
-        ent = dist.entropy()
-        features = torch.zeros(2,10)
-        dist = dg(features)
-        assert torch.allclose(dist.entropy(), ent)
-
-        ac = dist.rsample()
-        assert ac.requires_grad == True
-
-        dg = DiagGaussian(10, 2, constant_log_std=False)
-        features = torch.ones(2,10)
-        dist = dg(features)
-        ac = dist.sample()
-        assert ac.requires_grad == False
-        assert ac.shape == (2, 2)
-        assert torch.all(dist.mode()[0] == dist.mode()[1])
-        assert dist.mode().shape == (2, 2)
-        assert dist.log_prob(ac).shape == (2,)
-        assert dist.entropy().shape == (2,)
-        ent = dist.entropy()
-        features = torch.zeros(2,10)
-        dist = dg(features)
-        assert not torch.allclose(dist.entropy(), ent)
-
-        dist, logstd = dg(features, return_logstd=True)
-        assert torch.allclose(logstd, torch.zeros([1]))
-
-    def test_tanhnormal(self):
-        dg = TanhDiagGaussian(10, 2)
-        features = torch.ones(2,10)
-        dist = dg(features)
-        ac = dist.sample()
-        assert ac.requires_grad == False
-        assert ac.shape == (2, 2)
-        assert torch.all(dist.mode()[0] == dist.mode()[1])
-        assert dist.mode().shape == (2, 2)
-        assert dist.log_prob(ac).shape == (2,)
-        features = torch.zeros(2,10)
-        dist = dg(features)
-
-        ac = dist.rsample()
-        assert ac.requires_grad == True
-
-        dg = TanhDiagGaussian(10, 2, constant_log_std=False)
-        features = torch.ones(2,10)
-        dist = dg(features)
-        ac = dist.sample()
-        assert ac.requires_grad == False
-        assert ac.shape == (2, 2)
-        assert torch.all(dist.mode()[0] == dist.mode()[1])
-        assert dist.mode().shape == (2, 2)
-        assert dist.log_prob(ac).shape == (2,)
-        features = torch.zeros(2,10)
-        dist = dg(features)
-
-        dist, logstd = dg(features, return_logstd=True)
-        assert torch.allclose(logstd, torch.zeros([1]))
-
-        ac, pac = dist.sample(return_pretanh_value=True)
-        logp = dist.log_prob(ac, pac)
-        logp2 = dist.log_prob(ac)
-        assert torch.allclose(logp, logp2)
-        assert logp.shape == (2,)
-
-
-
 if __name__ == '__main__':
+    import unittest
+
+    class TestDistributions(unittest.TestCase):
+        def test_categorical(self):
+            cat = Categorical(10, 2)
+            features = torch.ones(2,10)
+            dist = cat(features)
+            ac = dist.sample()
+            assert ac.requires_grad == False
+            assert ac.shape == (2, 1)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 1)
+            assert dist.log_prob(ac).shape == (2,)
+            assert dist.entropy().shape == (2,)
+
+        def test_normal(self):
+            dg = DiagGaussian(10, 2)
+            features = torch.ones(2,10)
+            dist = dg(features)
+            ac = dist.sample()
+            assert ac.requires_grad == False
+            assert ac.shape == (2, 2)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+            assert dist.entropy().shape == (2,)
+            ent = dist.entropy()
+            features = torch.zeros(2,10)
+            dist = dg(features)
+            assert torch.allclose(dist.entropy(), ent)
+
+            ac = dist.rsample()
+            assert ac.requires_grad == True
+
+            dg = DiagGaussian(10, 2, constant_log_std=False)
+            features = torch.ones(2,10)
+            dist = dg(features)
+            ac = dist.sample()
+            assert ac.requires_grad == False
+            assert ac.shape == (2, 2)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+            assert dist.entropy().shape == (2,)
+            ent = dist.entropy()
+            features = torch.zeros(2,10)
+            dist = dg(features)
+            assert not torch.allclose(dist.entropy(), ent)
+
+            dist, logstd = dg(features, return_logstd=True)
+            assert torch.allclose(logstd, torch.zeros([1]))
+
+        def test_tanhnormal(self):
+            dg = TanhDiagGaussian(10, 2)
+            features = torch.ones(2,10)
+            dist = dg(features)
+            ac = dist.sample()
+            assert ac.requires_grad == False
+            assert ac.shape == (2, 2)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+            features = torch.zeros(2,10)
+            dist = dg(features)
+
+            ac = dist.rsample()
+            assert ac.requires_grad == True
+
+            dg = TanhDiagGaussian(10, 2, constant_log_std=False)
+            features = torch.ones(2,10)
+            dist = dg(features)
+            ac = dist.sample()
+            assert ac.requires_grad == False
+            assert ac.shape == (2, 2)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+            features = torch.zeros(2,10)
+            dist = dg(features)
+
+            dist, logstd = dg(features, return_logstd=True)
+            assert torch.allclose(logstd, torch.zeros([1]))
+
+            ac, pac = dist.sample(return_pretanh_value=True)
+            logp = dist.log_prob(ac, pac)
+            logp2 = dist.log_prob(ac)
+            assert torch.allclose(logp, logp2)
+            assert logp.shape == (2,)
+
+
+
     unittest.main()

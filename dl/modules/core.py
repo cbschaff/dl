@@ -79,51 +79,51 @@ class Conv2dNet(nn.Module):
         return x
 
 
-import unittest, os
-from dl.util import load_gin_configs
-
-class TestCore(unittest.TestCase):
-    def test(self):
-        config = \
-            "import dl.util.gin_torch_externals \n \
-            FeedForwardNet.activation_fn = @F.relu \n \
-            FeedForwardNet.activate_last = False \n \
-            FeedForwardNet.units = [64,64,1] \n \
-            FeedForwardNet.in_shape = 2304 \n \
-            Conv2dNet.activation_fn = @F.relu \n \
-            Conv2dNet.activate_last = True \n \
-            Conv2dNet.in_channels = 3 \n \
-            Conv2dNet.convs = [(16,3), (32,3,2), (64,3,1,1)] \n"
-        with open('./test.gin', 'w') as f:
-            f.write(config)
-        load_gin_configs(['./test.gin'])
-
-        import numpy as np
-        class Net(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = Conv2dNet()
-                self.ff = FeedForwardNet()
-            def forward(self, x):
-                x = self.conv(x)
-                x = x.view(-1, 64 * 6 * 6)
-                return self.ff(x)
-        net = Net()
-        assert net.conv.conv2d0.kernel_size == (3,3)
-        assert net.conv.conv2d1.kernel_size == (3,3)
-        assert net.conv.conv2d2.kernel_size == (3,3)
-
-        assert net.conv.conv2d0.stride == (1,1)
-        assert net.conv.conv2d1.stride == (2,2)
-        assert net.conv.conv2d2.stride == (1,1)
-
-        assert net.conv.conv2d2.padding == (1,1)
-
-        assert net.ff.fc0.in_features == 2304
-        assert net.ff.fc1.in_features == 64
-        assert net.ff.fc2.in_features == 64
-        assert net.ff.fc2.out_features == 1
-        os.remove('./test.gin')
-
 if __name__=='__main__':
+
+    import unittest, os
+    from dl import load_config
+
+    class TestCore(unittest.TestCase):
+        def test(self):
+            config = \
+                "FeedForwardNet.activation_fn = @F.relu \n \
+                FeedForwardNet.activate_last = False \n \
+                FeedForwardNet.units = [64,64,1] \n \
+                FeedForwardNet.in_shape = 2304 \n \
+                Conv2dNet.activation_fn = @F.relu \n \
+                Conv2dNet.activate_last = True \n \
+                Conv2dNet.in_channels = 3 \n \
+                Conv2dNet.convs = [(16,3), (32,3,2), (64,3,1,1)] \n"
+            with open('./test.gin', 'w') as f:
+                f.write(config)
+            load_config('./test.gin')
+
+            import numpy as np
+            class Net(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.conv = Conv2dNet()
+                    self.ff = FeedForwardNet()
+                def forward(self, x):
+                    x = self.conv(x)
+                    x = x.view(-1, 64 * 6 * 6)
+                    return self.ff(x)
+            net = Net()
+            assert net.conv.conv2d0.kernel_size == (3,3)
+            assert net.conv.conv2d1.kernel_size == (3,3)
+            assert net.conv.conv2d2.kernel_size == (3,3)
+
+            assert net.conv.conv2d0.stride == (1,1)
+            assert net.conv.conv2d1.stride == (2,2)
+            assert net.conv.conv2d2.stride == (1,1)
+
+            assert net.conv.conv2d2.padding == (1,1)
+
+            assert net.ff.fc0.in_features == 2304
+            assert net.ff.fc1.in_features == 64
+            assert net.ff.fc2.in_features == 64
+            assert net.ff.fc2.out_features == 1
+            os.remove('./test.gin')
+
     unittest.main()

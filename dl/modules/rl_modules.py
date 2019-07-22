@@ -320,7 +320,7 @@ class Policy(nn.Module):
             return self.base.recurrent_state_size()
 
 
-from dl.util import conv_out_shape
+from dl.rl.util import conv_out_shape
 
 @gin.configurable
 class NatureDQN(nn.Module):
@@ -380,96 +380,96 @@ def get_default_base(obs_shape, ac_shape=None):
 
 
 
-import unittest
-from dl.util import atari_env
-import gym
+if __name__=='__main__':
+    import unittest
+    from dl.rl.util import atari_env
+    import gym
 
-class TestRLModules(unittest.TestCase):
-    def testValueFunction(self):
-        env = atari_env('Pong')
-        net = ValueFunction(env.observation_space.shape)
-        ob = env.reset()
-        for _ in range(10):
-            outs = net(torch.from_numpy(ob[None]))
-            assert outs.value.shape == (1,)
-            ob, r, done, _ = env.step(env.action_space.sample())
+    class TestRLModules(unittest.TestCase):
+        def testValueFunction(self):
+            env = atari_env('Pong')
+            net = ValueFunction(env.observation_space.shape)
+            ob = env.reset()
+            for _ in range(10):
+                outs = net(torch.from_numpy(ob[None]))
+                assert outs.value.shape == (1,)
+                ob, r, done, _ = env.step(env.action_space.sample())
 
-    def testQFunction(self):
-        env = atari_env('Pong')
-        net = QFunction(env.observation_space.shape, env.action_space)
-        ob = env.reset()
-        for _ in range(10):
-            outs = net(torch.from_numpy(ob[None]))
+        def testQFunction(self):
+            env = atari_env('Pong')
+            net = QFunction(env.observation_space.shape, env.action_space)
+            ob = env.reset()
+            for _ in range(10):
+                outs = net(torch.from_numpy(ob[None]))
+                assert outs.action.shape == (1,)
+                assert outs.max_q.shape == (1,)
+                assert outs.qvals.shape == (1,env.action_space.n)
+                ob, r, done, _ = env.step(outs.action[0])
+
+            out1 = net(torch.from_numpy(ob[None]))
+            outs = net(torch.from_numpy(ob[None]), (out1.action + 1) % env.action_space.n)
             assert outs.action.shape == (1,)
             assert outs.max_q.shape == (1,)
             assert outs.qvals.shape == (1,env.action_space.n)
-            ob, r, done, _ = env.step(outs.action[0])
+            assert outs.action != out1.action
+            assert outs.value != out1.value
 
-        out1 = net(torch.from_numpy(ob[None]))
-        outs = net(torch.from_numpy(ob[None]), (out1.action + 1) % env.action_space.n)
-        assert outs.action.shape == (1,)
-        assert outs.max_q.shape == (1,)
-        assert outs.qvals.shape == (1,env.action_space.n)
-        assert outs.action != out1.action
-        assert outs.value != out1.value
+            class SABase(nn.Module):
+                def __init__(self, ob_shape, ac_shape):
+                    super().__init__()
 
-        class SABase(nn.Module):
-            def __init__(self, ob_shape, ac_shape):
-                super().__init__()
+                def forward(self, x, a):
+                    return x
 
-            def forward(self, x, a):
-                return x
-
-        env = gym.make('MountainCarContinuous-v0')
-        net = QFunction(env.observation_space.shape, env.action_space, base=SABase)
-        ob = env.reset()
-        for _ in range(10):
-            ac = torch.from_numpy(np.array([env.action_space.sample()])).float()
-            outs = net(torch.from_numpy(ob[None]).float(), ac)
-            assert outs.action.shape == (1,*env.action_space.shape)
-            assert outs.value.shape == (1,)
-            assert outs.max_q == None
-            assert outs.qvals == None
-            ob, r, done, _ = env.step(outs.action[0])
+            env = gym.make('MountainCarContinuous-v0')
+            net = QFunction(env.observation_space.shape, env.action_space, base=SABase)
+            ob = env.reset()
+            for _ in range(10):
+                ac = torch.from_numpy(np.array([env.action_space.sample()])).float()
+                outs = net(torch.from_numpy(ob[None]).float(), ac)
+                assert outs.action.shape == (1,*env.action_space.shape)
+                assert outs.value.shape == (1,)
+                assert outs.max_q == None
+                assert outs.qvals == None
+                ob, r, done, _ = env.step(outs.action[0])
 
 
-    def testPolicy(self):
-        env = atari_env('Pong')
-        net = Policy(env.observation_space.shape, env.action_space, norm_observations=True)
-        ob = env.reset()
-        for _ in range(10):
-            outs = net(torch.from_numpy(ob[None]))
-            assert outs.action.shape == (1,1)
-            assert outs.value.shape == (1,)
-            assert outs.state_out is None
-            ob, r, done, _ = env.step(outs.action[0])
-        state = net.state_dict()
-        assert 'running_norm.mean' in state
-        assert 'running_norm.var' in state
-        assert 'running_norm.count' in state
+        def testPolicy(self):
+            env = atari_env('Pong')
+            net = Policy(env.observation_space.shape, env.action_space, norm_observations=True)
+            ob = env.reset()
+            for _ in range(10):
+                outs = net(torch.from_numpy(ob[None]))
+                assert outs.action.shape == (1,1)
+                assert outs.value.shape == (1,)
+                assert outs.state_out is None
+                ob, r, done, _ = env.step(outs.action[0])
+            state = net.state_dict()
+            assert 'running_norm.mean' in state
+            assert 'running_norm.var' in state
+            assert 'running_norm.count' in state
 
-        env = gym.make('MountainCarContinuous-v0')
-        net = Policy(env.observation_space.shape, env.action_space)
-        ob = env.reset()
-        for _ in range(10):
-            outs = net(torch.from_numpy(ob[None]).float())
-            assert outs.action.shape == (1,*env.action_space.shape)
-            assert outs.value.shape == (1,)
-            assert outs.state_out is None
-            ob, r, done, _ = env.step(outs.action[0])
+            env = gym.make('MountainCarContinuous-v0')
+            net = Policy(env.observation_space.shape, env.action_space)
+            ob = env.reset()
+            for _ in range(10):
+                outs = net(torch.from_numpy(ob[None]).float())
+                assert outs.action.shape == (1,*env.action_space.shape)
+                assert outs.value.shape == (1,)
+                assert outs.state_out is None
+                ob, r, done, _ = env.step(outs.action[0])
 
-        net = Policy(env.observation_space.shape, env.action_space, dist=TanhDiagGaussian)
-        ob = env.reset()
-        for _ in range(10):
-            outs = net(torch.from_numpy(ob[None]).float())
-            assert outs.action.shape == (1,*env.action_space.shape)
-            assert outs.value.shape == (1,)
-            assert outs.state_out is None
-            assert outs.dist.__class__.__name__ == 'TanhNormal'
-            assert torch.abs(outs.action) < 1
-            ob, r, done, _ = env.step(outs.action[0])
+            net = Policy(env.observation_space.shape, env.action_space, dist=TanhDiagGaussian)
+            ob = env.reset()
+            for _ in range(10):
+                outs = net(torch.from_numpy(ob[None]).float())
+                assert outs.action.shape == (1,*env.action_space.shape)
+                assert outs.value.shape == (1,)
+                assert outs.state_out is None
+                assert outs.dist.__class__.__name__ == 'TanhNormal'
+                assert torch.abs(outs.action) < 1
+                ob, r, done, _ = env.step(outs.action[0])
 
 
 
-if __name__=='__main__':
     unittest.main()
