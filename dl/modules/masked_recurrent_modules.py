@@ -75,19 +75,19 @@ class MaskedRNN(MaskedRecurrentModule, nn.RNN):
     def __init__(self, *args, **kwargs):
         nn.RNN.__init__(self, *args, **kwargs)
         self._module = nn.RNN.forward
-        assert self.batch_first == False, "Time dimension must be first for RL recurrent modules."
+        assert self.batch_first == False, "Time dimension must be first for masked recurrent modules."
 
 class MaskedLSTM(MaskedRecurrentModule, nn.LSTM):
     def __init__(self, *args, **kwargs):
         nn.LSTM.__init__(self, *args, **kwargs)
         self._module = nn.LSTM.forward
-        assert self.batch_first == False, "Time dimension must be first for RL recurrent modules."
+        assert self.batch_first == False, "Time dimension must be first for masked recurrent modules."
 
 class MaskedGRU(MaskedRecurrentModule, nn.GRU):
     def __init__(self, *args, **kwargs):
         nn.GRU.__init__(self, *args, **kwargs)
         self._module = nn.GRU.forward
-        assert self.batch_first == False, "Time dimension must be first for RL recurrent modules."
+        assert self.batch_first == False, "Time dimension must be first for masked recurrent modules."
 
 
 

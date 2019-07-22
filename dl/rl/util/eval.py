@@ -26,7 +26,8 @@ class Actor(object):
             out = self.net(ob)
         else:
             out = self.net(ob, self.state, mask)
-        self.state = out.state_out
+        if hasattr(out, 'state_out'):
+            self.state = out.state_out
         return out.action.cpu().numpy()
 
 def _wrap_env(env):

@@ -64,7 +64,7 @@ class Trainer(object):
     def state_dict(self):
         raise NotImplementedError
 
-    def load_state_dict(self):
+    def load_state_dict(self, state_dict):
         raise NotImplementedError
 
     def save(self):

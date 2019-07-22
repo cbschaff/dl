@@ -225,7 +225,7 @@ if __name__=='__main__':
 
     import unittest
     import gym, numpy as np
-    from dl.rl.util import atari_env
+    from dl.rl.envs import make_atari_env as atari_env
 
     class TestBuffer(unittest.TestCase):
         def test(self):

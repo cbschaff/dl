@@ -3,9 +3,8 @@
 PPO RL algorithm.
 https://arxiv.org/abs/1707.06347
 """
-from dl.rl.trainers import OnPolicyTrainer
+from dl.rl.trainers import RolloutTrainer
 from dl.rl.modules import Policy
-from dl.rl.util import RolloutStorage
 from dl import logger
 import gin, time
 import torch
@@ -15,7 +14,7 @@ import numpy as np
 
 
 @gin.configurable(blacklist=['logdir'])
-class PPO(OnPolicyTrainer):
+class PPO(RolloutTrainer):
     def __init__(self,
                  logdir,
                  env_fn,

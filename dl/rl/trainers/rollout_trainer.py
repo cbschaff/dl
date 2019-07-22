@@ -1,5 +1,4 @@
 from dl.rl.trainers import RLTrainer
-from dl.rl.envs import VecEpisodeLogger
 from dl.rl.util import Flattener, RolloutStorage
 import gin
 import torch
@@ -7,7 +6,7 @@ import torch
 
 
 @gin.configurable(blacklist=['logdir'])
-class OnPolicyTrainer(RLTrainer):
+class RolloutTrainer(RLTrainer):
     """
     Extends RLTrainer with functionality for OnPolicy RL algorithms.
     The resposibilities of this class are:

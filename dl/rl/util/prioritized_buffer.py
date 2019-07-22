@@ -6,6 +6,7 @@ from dl.rl.util import ReplayBuffer
 from dl.rl.util.segment_tree import SumSegmentTree, MinSegmentTree
 from dl.rl.util.buffer import sample_n_unique
 import random
+import numpy as np
 
 
 class PrioritizedReplayBuffer(object):
@@ -165,7 +166,7 @@ if __name__=='__main__':
 
     import unittest
     import gym, numpy as np
-    from dl.rl.util import atari_env
+    from dl.rl.envs import make_atari_env as atari_env
 
     class TestPrioritizedBuffer(unittest.TestCase):
         def test(self):
