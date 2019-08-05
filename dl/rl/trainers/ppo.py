@@ -39,6 +39,8 @@ class PPO(RolloutTrainer):
         self.init_rollout_storage(self.pi(self._ob).state_out, ['logp'])
         self.mse = nn.MSELoss(reduction='none')
 
+        self.eval_env = self.make_eval_env()
+
     def state_dict(self):
         return {
             'pi': self.pi.state_dict(),
@@ -72,9 +74,8 @@ class PPO(RolloutTrainer):
             logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
 
     def evaluate(self):
-        eval_env = self.env_fn(rank=self.nenv+1)
-        self.rl_evaluate(eval_env, self.pi)
-        self.rl_record(eval_env, self.pi)
+        self.rl_evaluate(self.pi)
+        self.rl_record(self.pi)
 
     def loss(self, batch):
         outs = self.pi(batch['ob'], batch['state'], batch['mask'])

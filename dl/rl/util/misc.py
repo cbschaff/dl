@@ -1,4 +1,6 @@
 import numpy as np
+from baselines.common.vec_env import VecEnv, VecEnvWrapper
+
 
 
 def conv_out_shape(in_shape, conv):
@@ -15,8 +17,44 @@ def conv_out_shape(in_shape, conv):
 def find_wrapper(env, cls):
     if isinstance(env, cls):
         return env
-    while hasattr(env, 'env'):
-        env = env.env
+    while hasattr(env, 'env') or hasattr(env, 'venv'):
+        if hasattr(env, 'env'):
+            env = env.env
+        else:
+            env = env.venv
         if isinstance(env, cls):
             return env
     return None
+
+
+def is_vec_env(env):
+    return isinstance(env, (VecEnvWrapper, VecEnv))
+
+
+def _get_env_ob_norm(env, steps):
+    ob = env.reset()
+    obs = [ob]
+    for _ in range(steps):
+        ob, _, done, _ = env.step(env.action_space.sample())
+        obs.append(ob)
+        if done:
+            obs.append(env.reset())
+    obs = np.stack(obs, axis=0)
+    return obs.mean(axis=0), obs.std(axis=0)
+
+
+def _get_venv_ob_norm(env, steps):
+    ob = env.reset()
+    obs = [ob]
+    for _ in range(steps):
+        ob, r, _, _ = env.step([env.action_space.sample() for _ in range(env.num_envs)])
+        obs.append(ob)
+    obs = np.concatenate(obs, axis=0)
+    return obs.mean(axis=0), obs.std(axis=0)
+
+
+def get_ob_norm(env, steps):
+    if is_vec_env(env):
+        return _get_venv_ob_norm(env, steps)
+    else:
+        return _get_env_ob_norm(env, steps)

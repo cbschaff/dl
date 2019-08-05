@@ -75,7 +75,7 @@ class SAC(ReplayBufferTrainer):
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
 
-        self.eval_env = FrameStack(self.env_fn(rank=1), self.frame_stack)
+        self.eval_env = self.make_eval_env()
         self.pi  = policy(self.eval_env)
         self.qf1 = qf(self.eval_env)
         self.qf2 = qf(self.eval_env)
@@ -112,6 +112,9 @@ class SAC(ReplayBufferTrainer):
         self.qf_criterion = torch.nn.MSELoss()
         self.vf_criterion = torch.nn.MSELoss()
         self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
+
+    def _make_eval_env(self):
+        return FrameStack(self.env_fn(rank=1), self.frame_stack)
 
     def state_dict(self):
         return {
@@ -252,8 +255,8 @@ class SAC(ReplayBufferTrainer):
                 self.opt_pi.step()
 
     def evaluate(self):
-        self.rl_evaluate(self.eval_env, self.pi)
-        self.rl_record(self.eval_env, self.pi)
+        self.rl_evaluate(self.pi)
+        self.rl_record(self.pi)
 
 
 if __name__ == '__main__':

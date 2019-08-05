@@ -19,6 +19,7 @@ DQN.gpu = True
 
 DQN.env_fn = @make_atari_env
 DQN.nenv = 1
+DQN.norm_observations = False
 DQN.eval_num_episodes = 20
 DQN.record_num_episodes = 5
 
@@ -51,3 +52,12 @@ make_atari_env.frameskip = 4
 make_atari_env.episode_life = True
 make_atari_env.clip_rewards = True
 make_atari_env.frame_stack = 1
+
+
+
+ObsNorm.steps = 10000
+ObsNorm.mean = None
+ObsNorm.std = None
+ObsNorm.eps = 1e-2
+ObsNorm.log = True
+ObsNorm.log_prob = 0.01

@@ -38,7 +38,7 @@ class DQN(ReplayBufferTrainer):
         self.log_period = log_period
         self.eps_schedule = LinearSchedule(exploration_timesteps, final_eps, 1.0)
 
-        self.eval_env = EpsilonGreedy(FrameStack(self.env_fn(rank=1), self.frame_stack), self.eval_eps)
+        self.eval_env = self.make_eval_env()
         self.qf = qfunction(self.eval_env).to(self.device)
         self.qf_targ = qfunction(self.eval_env).to(self.device)
         self.opt = optimizer(self.qf.parameters())
@@ -46,7 +46,11 @@ class DQN(ReplayBufferTrainer):
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
         else:
             self.criterion = torch.nn.MSELoss(reduction='none')
-        self._reset()
+
+    def _make_eval_env(self):
+        return EpsilonGreedy(FrameStack(self.env_fn(rank=1),
+                                        self.frame_stack),
+                             self.eval_eps)
 
     def state_dict(self):
         return {
@@ -102,8 +106,8 @@ class DQN(ReplayBufferTrainer):
             self.opt.step()
 
     def evaluate(self):
-        self.rl_evaluate(self.eval_env, self.qf)
-        self.rl_record(self.eval_env, self.qf)
+        self.rl_evaluate(self.qf)
+        self.rl_record(self.qf)
 
 
 

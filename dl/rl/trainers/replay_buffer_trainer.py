@@ -95,7 +95,7 @@ if __name__ == '__main__':
         def forward(self, ob):
             return self.net(ob.float())
 
-    class T(OffPolicyTrainer):
+    class T(ReplayBufferTrainer):
         def __init__(self, *args, base=None, **kwargs):
             super().__init__(*args, **kwargs)
             self.qf = QFunction(self.env, base)

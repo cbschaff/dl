@@ -15,6 +15,7 @@ SAC.gpu = True
 
 SAC.env_fn = @make_env
 SAC.nenv = 1
+SAC.norm_observations = True
 SAC.eval_num_episodes = 20
 SAC.record_num_episodes = 5
 
@@ -49,3 +50,11 @@ ValueFunction.base = @FeedForwardVFBase
 QFunction.base     = @AppendActionFeedForwardQFBase
 
 TanhDiagGaussian.constant_log_std = False
+
+
+ObsNorm.steps = 10000
+ObsNorm.mean = None
+ObsNorm.std = None
+ObsNorm.eps = 1e-2
+ObsNorm.log = True
+ObsNorm.log_prob = 0.01

@@ -184,7 +184,7 @@ if __name__ == '__main__':
             return self.dist(x), self.vf(x), state_out
 
 
-    class T(OnPolicyTrainer):
+    class T(RolloutTrainer):
         def __init__(self, *args, base=None, **kwargs):
             super().__init__(*args, **kwargs)
             self.pi = Policy(self.env, base)
