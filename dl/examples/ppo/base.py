@@ -1,3 +1,4 @@
+"""Define networks for PPO experiments."""
 from dl.rl.modules import ActorCriticBase
 from dl.rl.util import conv_out_shape
 from dl.modules import Categorical, MaskedLSTM, TimeAndBatchUnflattener
@@ -9,10 +10,10 @@ import gin
 
 @gin.configurable
 class A3CCNN(ActorCriticBase):
-    """
-    Deep network from https://arxiv.org/abs/1602.01783
-    """
+    """Deep network from https://arxiv.org/abs/1602.01783."""
+
     def build(self):
+        """Build."""
         self.conv1 = nn.Conv2d(4, 16, 8, 4)
         self.conv2 = nn.Conv2d(16, 32, 4, 2)
         shape = self.observation_space.shape[1:]
@@ -26,6 +27,7 @@ class A3CCNN(ActorCriticBase):
         nn.init.constant_(self.vf.bias.data, 0)
 
     def forward(self, x):
+        """Forward."""
         x = (x.float() / 128.) - 1.
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
@@ -35,10 +37,10 @@ class A3CCNN(ActorCriticBase):
 
 @gin.configurable
 class A3CRNN(ActorCriticBase):
-    """
-    Deep network from https://arxiv.org/abs/1602.01783
-    """
+    """Deep recurrent network from https://arxiv.org/abs/1602.01783."""
+
     def build(self):
+        """Build."""
         self.conv1 = nn.Conv2d(1, 16, 8, 4)
         self.conv2 = nn.Conv2d(16, 32, 4, 2)
         shape = self.observation_space.shape[1:]
@@ -54,6 +56,7 @@ class A3CRNN(ActorCriticBase):
         nn.init.constant_(self.vf.bias.data, 0)
 
     def forward(self, x, state_in=None, mask=None):
+        """Forward."""
         x = (x.float() / 128.) - 1.
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))

@@ -1,7 +1,4 @@
-"""
-Modified from OpenAI baselines.
-https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
-"""
+"""Prioritized Replay Buffer."""
 from dl.rl.util import ReplayBuffer
 from dl.rl.util.segment_tree import SumSegmentTree, MinSegmentTree
 from dl.rl.util.buffer import sample_n_unique
@@ -10,11 +7,15 @@ import numpy as np
 
 
 class PrioritizedReplayBuffer(object):
+    """Prioritized Reply Buffer.
+
+    Implementation of https://arxiv.org/abs/1511.05952, using the
+    "proportional sampling" algorithm.
     """
-    Implementation of https://arxiv.org/abs/1511.05952, using the "proportional sampling" algorithm.
-    """
+
     def __init__(self, buffer, alpha):
         """Create Prioritized Replay buffer.
+
         Parameters
         ----------
         size: int
@@ -26,6 +27,7 @@ class PrioritizedReplayBuffer(object):
         See Also
         --------
         ReplayBuffer.__init__
+
         """
         assert alpha >= 0
         self._alpha = alpha
@@ -42,10 +44,12 @@ class PrioritizedReplayBuffer(object):
         self._max_priority = 1.0
 
     def can_sample(self, batch_size):
+        """Check if batch_size things can be sampled."""
         return self.buffer.can_sample(batch_size)
 
     def _sample_proportional(self):
-        mass = random.random() * self._it_sum.sum(0, self.buffer.num_in_buffer - 2)
+        mass = random.random() * self._it_sum.sum(
+            0, self.buffer.num_in_buffer - 2)
         return self._it_sum.find_prefixsum_idx(mass)
 
     def _encode_sample(self, idxes):
@@ -53,6 +57,7 @@ class PrioritizedReplayBuffer(object):
 
     def sample(self, batch_size, beta):
         """Sample a batch of experiences.
+
         compared to ReplayBuffer.sample
         it also returns importance weights and idxes
         of sampled experiences.
@@ -82,6 +87,7 @@ class PrioritizedReplayBuffer(object):
         idxes: np.array
             Array of shape (batch_size,) and dtype np.int32
             idexes in buffer of sampled experiences
+
         """
         assert beta > 0
         assert self.can_sample(batch_size)
@@ -100,9 +106,11 @@ class PrioritizedReplayBuffer(object):
         return tuple(list(encoded_sample) + [weights, idxes])
 
     def encode_recent_observation(self):
+        """Get last observation."""
         return self.buffer.encode_recent_observation()
 
     def store_frame(self, frame):
+        """Store a frame."""
         idx = self.buffer.store_frame(frame)
         self._it_sum[idx] = self._max_priority ** self._alpha
         self._it_min[idx] = self._max_priority ** self._alpha
@@ -110,10 +118,12 @@ class PrioritizedReplayBuffer(object):
         return idx
 
     def store_effect(self, *args, **kwargs):
+        """Store effect of action."""
         return self.buffer.store_effect(*args, **kwargs)
 
     def update_priorities(self, idxes, priorities):
         """Update priorities of sampled transitions.
+
         sets priority of transition at index idxes[i] in buffer
         to priorities[i].
         Parameters
@@ -124,6 +134,7 @@ class PrioritizedReplayBuffer(object):
             List of updated priorities corresponding to
             transitions at the sampled idxes denoted by
             variable `idxes`.
+
         """
         priorities = np.minimum(priorities, self._max_priority)
         assert len(idxes) == len(priorities)
@@ -136,9 +147,11 @@ class PrioritizedReplayBuffer(object):
             self._max_priority = max(self._max_priority, priority)
 
     def env_reset(self):
+        """Modify buffer for early environment reset."""
         self.buffer.env_reset()
 
     def state_dict(self):
+        """State dict."""
         state = self.buffer.state_dict()
         state['_max_priority'] = self._max_priority
         state['_it_sum'] = self._it_sum
@@ -146,6 +159,7 @@ class PrioritizedReplayBuffer(object):
         return state
 
     def load_state_dict(self, state_dict):
+        """Load state dict."""
         self.buffer.load_state_dict(state_dict)
         self._max_priority = state_dict['_max_priority']
         if hasattr(state_dict['_it_sum'], 'item'):
@@ -158,18 +172,20 @@ class PrioritizedReplayBuffer(object):
             self._it_min = state_dict['_it_min']
 
 
-
 """
 Unit Tests
 """
-if __name__=='__main__':
 
+
+if __name__ == '__main__':
     import unittest
-    import gym, numpy as np
     from dl.rl.envs import make_atari_env as atari_env
 
     class TestPrioritizedBuffer(unittest.TestCase):
+        """Test."""
+
         def test(self):
+            """Test."""
             buffer = ReplayBuffer(10, 4)
             buffer = PrioritizedReplayBuffer(buffer, alpha=0.5)
             env = atari_env('Pong')
@@ -185,9 +201,9 @@ if __name__=='__main__':
             # Check sample shapes
             s = buffer.sample(2, beta=1.)
             assert len(s) == 7
-            assert s[0].shape == (2,4,84,84)
-            assert s[3].shape == (2,4,84,84)
-            s = buffer._encode_sample([4,5])
+            assert s[0].shape == (2, 4, 84, 84)
+            assert s[3].shape == (2, 4, 84, 84)
+            s = buffer._encode_sample([4, 5])
             # Check observation stacking
             assert np.allclose(s[0][0][3], s[3][0][2])
             assert np.allclose(s[0][0][2], s[3][0][1])
@@ -197,13 +213,12 @@ if __name__=='__main__':
             assert np.allclose(s[0][0][3],   s[0][1][2])
 
             # check priorities
-            buffer.update_priorities([4,5],[0.5,2])
+            buffer.update_priorities([4, 5], [0.5, 2])
             assert buffer._it_sum[4] == 0.5 ** buffer._alpha
             assert buffer._it_sum[5] == 1.0 ** buffer._alpha
             assert buffer._it_min[4] == 0.5 ** buffer._alpha
             assert buffer._it_min[5] == 1.0 ** buffer._alpha
             assert buffer._max_priority == 1.0
-
 
             # Check for wrap around when buffer is full
             s = buffer._encode_sample([0])
@@ -215,11 +230,10 @@ if __name__=='__main__':
             buffer2 = PrioritizedReplayBuffer(buffer2, alpha=0.5)
             buffer2.load_state_dict(state)
 
-            s1 = buffer._encode_sample([1,3,5])
-            s2 = buffer2._encode_sample([1,3,5])
-            for i,x in enumerate(s1):
+            s1 = buffer._encode_sample([1, 3, 5])
+            s2 = buffer2._encode_sample([1, 3, 5])
+            for i, x in enumerate(s1):
                 assert np.allclose(x, s2[i])
-
 
             for i in range(10):
                 ac = env.action_space.sample()
@@ -231,20 +245,15 @@ if __name__=='__main__':
                 assert idx == idx2
                 assert buffer._max_priority == buffer2._max_priority
 
-            s1 = buffer._encode_sample([1,3,5])
-            s2 = buffer2._encode_sample([1,3,5])
-            for i,x in enumerate(s1):
+            s1 = buffer._encode_sample([1, 3, 5])
+            s2 = buffer2._encode_sample([1, 3, 5])
+            for i, x in enumerate(s1):
                 assert np.allclose(x, s2[i])
 
-            buffer.update_priorities([4,5],[0.1,0.9])
-            buffer2.update_priorities([4,5],[0.1,0.9])
+            buffer.update_priorities([4, 5], [0.1, 0.9])
+            buffer2.update_priorities([4, 5], [0.1, 0.9])
             assert buffer._max_priority == buffer2._max_priority
             assert buffer._it_sum[4] == buffer2._it_sum[4]
             assert buffer._it_sum[5] == buffer2._it_sum[5]
-
-
-
-
-
 
     unittest.main()

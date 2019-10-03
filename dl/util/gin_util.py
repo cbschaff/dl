@@ -1,3 +1,4 @@
+"""Register pytorch classes and functions with gin."""
 import gin
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,60 +6,66 @@ import torch.optim as optim
 import torchvision
 import inspect
 
-optimizers = [obj for name,obj in inspect.getmembers(optim) if inspect.isclass(obj)]
+optimizers = [obj for name, obj in inspect.getmembers(optim)
+              if inspect.isclass(obj)]
 for o in optimizers:
     gin.config.external_configurable(o, module='optim')
 
-modules = [obj for name,obj in inspect.getmembers(nn) if inspect.isclass(obj)]
+modules = [obj for name, obj in inspect.getmembers(nn) if inspect.isclass(obj)]
 for m in modules:
     gin.config.external_configurable(m, module='nn')
 
-funcs = [f for name,f in inspect.getmembers(F) if inspect.isfunction(f)]
+funcs = [f for name, f in inspect.getmembers(F) if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='F')
-    except:
+    except Exception:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models) if inspect.isfunction(f)]
+funcs = [f for name, f in inspect.getmembers(torchvision.models)
+         if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models')
-    except:
+    except Exception:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models.segmentation) if inspect.isfunction(f)]
+funcs = [f for name, f in inspect.getmembers(torchvision.models.segmentation)
+         if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models.segmentation')
-    except:
+    except Exception:
         pass
 
-funcs = [f for name,f in inspect.getmembers(torchvision.models.detection) if inspect.isfunction(f)]
+funcs = [f for name, f in inspect.getmembers(torchvision.models.detection)
+         if inspect.isfunction(f)]
 for f in funcs:
     try:
         gin.config.external_configurable(f, module='models.detection')
-    except:
+    except Exception:
         pass
 
-transforms = [obj for name,obj in inspect.getmembers(torchvision.transforms) if inspect.isclass(obj)]
+transforms = [obj for name, obj in inspect.getmembers(torchvision.transforms)
+              if inspect.isclass(obj)]
 for t in transforms:
     gin.config.external_configurable(t, module='transforms')
 
-datasets = [obj for name,obj in inspect.getmembers(torchvision.datasets) if inspect.isclass(obj)]
+datasets = [obj for name, obj in inspect.getmembers(torchvision.datasets)
+            if inspect.isclass(obj)]
 for d in datasets:
     gin.config.external_configurable(d, module='datasets')
 
 
-
-
 def load_config(gin_files, gin_bindings=[]):
-    """Loads gin configuration files.
+    """Load gin configuration files.
+
     Args:
     gin_files: path or list of paths to the gin configuration files for this
       experiment.
     gin_bindings: list, of gin parameter bindings to override the values in
       the config files.
+
     """
     if isinstance(gin_files, str):
         gin_files = [gin_files]

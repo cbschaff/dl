@@ -1,3 +1,4 @@
+"""Defines network for DQN experiments."""
 from dl.rl.modules import DiscreteQFunctionBase
 from dl.rl.util import conv_out_shape
 import torch.nn.functional as F
@@ -8,10 +9,10 @@ import gin
 
 @gin.configurable
 class NatureDQN(DiscreteQFunctionBase):
-    """
-    Deep network from https://www.nature.com/articles/nature14236
-    """
+    """Deep network from https://www.nature.com/articles/nature14236."""
+
     def build(self):
+        """Build."""
         self.conv1 = nn.Conv2d(4, 32, 8, 4)
         self.conv2 = nn.Conv2d(32, 64, 4, 2)
         self.conv3 = nn.Conv2d(64, 64, 3, 1)
@@ -23,6 +24,7 @@ class NatureDQN(DiscreteQFunctionBase):
         self.qf = nn.Linear(512, self.action_space.n)
 
     def forward(self, x):
+        """Forward."""
         x = x.float() / 255.
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))

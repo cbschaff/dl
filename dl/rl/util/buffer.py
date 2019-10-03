@@ -1,12 +1,18 @@
-"""
-    This file is apdated from https://github.com/berkeleydeeprlcourse/homework/tree/master/hw3
-    Minor edits were made to allow for easier subclassing and changing the type of data stored.
+"""Replay buffer.
+
+This file is apdated from
+https://github.com/berkeleydeeprlcourse/homework/tree/master/hw3
+Edits were made to allow for easier subclassing and changing the type
+of data stored.
 """
 import numpy as np
 import random
 
+
 def sample_n_unique(sampling_f, n):
-    """Helper function. Given a function `sampling_f` that returns
+    """Sample n unique outputs from sampling_f.
+
+    Given a function `sampling_f` that returns
     comparable objects, sample n such unique objects.
     """
     res = []
@@ -16,9 +22,13 @@ def sample_n_unique(sampling_f, n):
             res.append(candidate)
     return res
 
+
 class ReplayBuffer(object):
+    """Replay Buffer."""
+
     def __init__(self, size, frame_history_len):
-        """This is a memory efficient implementation of the replay buffer.
+        """Memory efficient implementation of the replay buffer.
+
         The sepecific memory optimizations use here are:
             - only store each frame once rather than k times
               even if every observation normally consists of k last frames
@@ -26,8 +36,9 @@ class ReplayBuffer(object):
               to cast them back to float32 on GPU to minimize memory transfer
               time)
             - store frame_t and frame_(t+1) in the same buffer.
-        For the typical use case in Atari Deep RL buffer with 1M frames the total
-        memory footprint of this buffer is 10^6 * 84 * 84 bytes ~= 7 gigabytes
+        For the typical use case in Atari Deep RL buffer with 1M frames the
+        total memory footprint of this buffer is
+        10^6 * 84 * 84 bytes ~= 7 gigabytes
 
         Warning! Assumes that returning frame of zeros at the beginning
         of the episode, when there is less frames than `frame_history_len`,
@@ -42,41 +53,51 @@ class ReplayBuffer(object):
             overflows the old memories are dropped.
         frame_history_len: int
             Number of memories to be retried for each observation.
+
         """
         self.size = size
         self.frame_history_len = frame_history_len
 
-        self.next_idx      = 0
+        self.next_idx = 0
         self.num_in_buffer = 0
 
-        self.obs      = None
-        self.action   = None
+        self.obs = None
+        self.action = None
 
     def _init_obs_data(self, frame):
         dtype = np.float32 if frame.dtype == np.float64 else frame.dtype
-        self.obs      = np.empty([self.size] + list(frame.shape), dtype=dtype)
+        self.obs = np.empty([self.size] + list(frame.shape), dtype=dtype)
 
     def _init_replay_data(self, action_shape, action_dtype):
-        self.action   = np.empty([self.size] + list(action_shape), dtype=action_dtype)
-        self.reward   = np.empty([self.size],                      dtype=np.float32)
-        self.done     = np.empty([self.size],                      dtype=np.bool)
+        self.action = np.empty([self.size] + list(action_shape),
+                               dtype=action_dtype)
+        self.reward = np.empty([self.size], dtype=np.float32)
+        self.done = np.empty([self.size], dtype=np.bool)
 
     def can_sample(self, batch_size):
-        """Returns true if `batch_size` different transitions can be sampled from the buffer."""
+        """Check if a batch_size can be sampled.
+
+        Returns true if `batch_size` different transitions can be sampled
+        from the buffer.
+        """
         return batch_size + 1 <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
-        obs_batch      = np.concatenate([self._encode_observation(idx)[np.newaxis, :] for idx in idxes], 0)
-        act_batch      = self.action[idxes]
-        rew_batch      = self.reward[idxes]
-        next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[np.newaxis, :] for idx in idxes], 0)
-        done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
+        obs_batch = np.concatenate(
+            [self._encode_observation(idx)[np.newaxis, :] for idx in idxes], 0)
+        act_batch = self.action[idxes]
+        rew_batch = self.reward[idxes]
+        next_obs_batch = np.concatenate(
+            [self._encode_observation(idx + 1)[np.newaxis, :] for idx in idxes],
+            0)
+        done_mask = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes],
+                             dtype=np.float32)
 
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
 
-
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
+
         i-th sample transition is the following:
         when observing `obs_batch[i]`, action `act_batch[i]` was taken,
         after which reward `rew_batch[i]` was received and subsequent
@@ -103,25 +124,29 @@ class ReplayBuffer(object):
             and dtype np.uint8
         done_mask: np.array
             Array of shape (batch_size,) and dtype np.float32
+
         """
         assert self.can_sample(batch_size)
-        idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - 2), batch_size)
+        idxes = sample_n_unique(
+            lambda: random.randint(0, self.num_in_buffer - 2), batch_size)
         return self._encode_sample(idxes)
 
     def encode_recent_observation(self):
         """Return the most recent `frame_history_len` frames.
+
         Returns
         -------
         observation: np.array
             Array of shape (img_h, img_w, img_c * frame_history_len)
             and dtype np.uint8, where observation[:, :, i*img_c:(i+1)*img_c]
             encodes frame at time `t - frame_history_len + i`
+
         """
         assert self.num_in_buffer > 0
         return self._encode_observation((self.next_idx - 1) % self.size)
 
     def _encode_observation(self, idx):
-        end_idx   = idx + 1 # make noninclusive
+        end_idx = idx + 1  # make noninclusive
         start_idx = end_idx - self.frame_history_len
         # if there weren't enough frames ever in the buffer for context
         if start_idx < 0 and self.num_in_buffer != self.size:
@@ -133,18 +158,21 @@ class ReplayBuffer(object):
         # if zero padding is needed for missing context
         # or we are on the boundry of the buffer
         if start_idx < 0 or missing_context > 0:
-            frames = [np.zeros_like(self.obs[0]) for _ in range(missing_context)]
+            frames = [
+                np.zeros_like(self.obs[0]) for _ in range(missing_context)
+            ]
             for idx in range(start_idx, end_idx):
                 frames.append(self.obs[idx % self.size])
             return np.concatenate(frames, 0)
         else:
-            # this optimization has potential to saves about 30% compute time \o/
+            # this optimization has potential to saves about 30% compute time
             s = self.obs.shape[2:]
             return self.obs[start_idx:end_idx].reshape(-1, *s)
 
     def store_frame(self, frame):
-        """Store a single frame in the buffer at the next available index, overwriting
-        old frames if necessary.
+        """Store a single frame in the buffer at the next available index.
+
+        Overwrites old frames if necessary.
         Parameters
         ----------
         frame: np.array
@@ -152,7 +180,9 @@ class ReplayBuffer(object):
         Returns
         -------
         idx: int
-            Index at which the frame is stored. To be used for `store_effect` later.
+            Index at which the frame is stored. To be used for `store_effect`
+            later.
+
         """
         if self.obs is None:
             self._init_obs_data(frame)
@@ -166,14 +196,16 @@ class ReplayBuffer(object):
         return ret
 
     def store_effect(self, idx, action, reward, done):
-        """Store effects of action taken after obeserving frame stored
-        at index idx. The reason `store_frame` and `store_effect` is broken
-        up into two functions is so that one can call `encode_recent_observation`
-        in between.
+        """Store effects of action taken after obeserving frame stored at idx.
+
+        The reason `store_frame` and `store_effect` is broken
+        up into two functions is so that one can call
+        `encode_recent_observation` in between.
         Paramters
         ---------
         idx: int
-            Index in buffer of recently observed frame (returned by `store_frame`).
+            Index in buffer of recently observed frame
+            (returned by `store_frame`).
         action: int
             Action that was performed upon observing this frame.
         reward: float
@@ -187,10 +219,11 @@ class ReplayBuffer(object):
             self._init_replay_data(action.shape, action.dtype)
         self.action[idx] = action
         self.reward[idx] = reward
-        self.done[idx]   = done
+        self.done[idx] = done
 
     def env_reset(self):
-        """
+        """Update buffer based on early environment resest.
+
         Allow environment resets for the most recent transition after it has
         been stored. This is useful when loading a saved replay buffer.
         """
@@ -198,6 +231,7 @@ class ReplayBuffer(object):
             self.done[(self.next_idx-1) % self.size] = True
 
     def state_dict(self):
+        """State dict."""
         return {
             'obs': self.obs,
             'action': self.action,
@@ -208,6 +242,7 @@ class ReplayBuffer(object):
         }
 
     def load_state_dict(self, state_dict):
+        """Load state dict."""
         self.obs = state_dict['obs']
         self.action = state_dict['action']
         self.reward = state_dict['reward']
@@ -216,19 +251,20 @@ class ReplayBuffer(object):
         self.next_idx = state_dict['next_idx']
 
 
-
-
 """
 Unit Tests
 """
-if __name__=='__main__':
 
+
+if __name__ == '__main__':
     import unittest
-    import gym, numpy as np
     from dl.rl.envs import make_atari_env as atari_env
 
     class TestBuffer(unittest.TestCase):
+        """Test."""
+
         def test(self):
+            """Test."""
             buffer = ReplayBuffer(10, 4)
             env = atari_env('Pong')
             init_obs = env.reset()
@@ -242,9 +278,9 @@ if __name__=='__main__':
 
             # Check sample shapes
             s = buffer.sample(2)
-            assert s[0].shape == (2,4,84,84)
-            assert s[3].shape == (2,4,84,84)
-            s = buffer._encode_sample([4,5])
+            assert s[0].shape == (2, 4, 84, 84)
+            assert s[3].shape == (2, 4, 84, 84)
+            s = buffer._encode_sample([4, 5])
             # Check observation stacking
             assert np.allclose(s[0][0][3], s[3][0][2])
             assert np.allclose(s[0][0][2], s[3][0][1])
@@ -257,20 +293,19 @@ if __name__=='__main__':
             s = buffer._encode_sample([0])
             assert not np.allclose(s[0][0][:-3], 0)
 
-            #Check env reset
+            # Check env reset
             buffer.env_reset()
-            assert buffer.done[buffer.next_idx - 1 % buffer.size] == True
+            assert buffer.done[buffer.next_idx - 1 % buffer.size]
 
             # Check saving and loading
             state = buffer.state_dict()
             buffer2 = ReplayBuffer(10, 4)
             buffer2.load_state_dict(state)
 
-            s1 = buffer._encode_sample([1,3,5])
-            s2 = buffer2._encode_sample([1,3,5])
-            for i,x in enumerate(s1):
+            s1 = buffer._encode_sample([1, 3, 5])
+            s2 = buffer2._encode_sample([1, 3, 5])
+            for i, x in enumerate(s1):
                 assert np.allclose(x, s2[i])
-
 
             for i in range(10):
                 ac = env.action_space.sample()
@@ -281,13 +316,9 @@ if __name__=='__main__':
                 idx2 = buffer2.store_frame(obs)
                 assert idx == idx2
 
-            s1 = buffer._encode_sample([1,3,5])
-            s2 = buffer2._encode_sample([1,3,5])
-            for i,x in enumerate(s1):
+            s1 = buffer._encode_sample([1, 3, 5])
+            s2 = buffer2._encode_sample([1, 3, 5])
+            for i, x in enumerate(s1):
                 assert np.allclose(x, s2[i])
-
-
-
-
 
     unittest.main()

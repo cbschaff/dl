@@ -1,16 +1,18 @@
-"""
-Modified from https://github.com/pytorch/pytorch/issues/11813
-"""
+"""Modified from https://github.com/pytorch/pytorch/issues/11813."""
 
 import numpy as np
 import torch.utils.data.sampler as TorchSampler
 
 # the initial permutation is preserved across restarts
 
+
 class StatefulSampler(TorchSampler.Sampler):
+    """Allows epoch progess to be saved and loaded."""
+
     # vanilla list is orders of magnitude faster for indexing
     # while np.array/torch.Tensor is 3x more storage efficient
     def __init__(self, data_source, shuffle=True):
+        """Init."""
         self.shuffle = shuffle
         self.dset = data_source
         self._init_indices()
@@ -25,12 +27,15 @@ class StatefulSampler(TorchSampler.Sampler):
         self.iter_counter = 0
 
     def __len__(self):
+        """__len__."""
         return len(self.dset)
 
     def __iter__(self):
+        """__iter__."""
         return self
 
     def __next__(self):
+        """__next__."""
         if self.iter_counter == len(self.indices):
             self._init_indices()
             raise StopIteration()
@@ -40,10 +45,12 @@ class StatefulSampler(TorchSampler.Sampler):
             return elem
 
     def load_state_dict(self, state_dict):
+        """Load sampler state."""
         self.indices = list(state_dict['indices'])
         self.iter_counter = state_dict['iter_counter']
 
     def state_dict(self, loader_iter=None):
+        """Save sampler state."""
         prefetched_num = 0
         if loader_iter and loader_iter.num_workers > 0:
             batch_size = loader_iter.batch_sampler.batch_size
@@ -55,18 +62,20 @@ class StatefulSampler(TorchSampler.Sampler):
         }
 
 
-
-
 if __name__ == '__main__':
     import unittest
     from torch.utils.data import Dataset, DataLoader
     import time
 
     class TestSampler(unittest.TestCase):
+        """Test."""
+
         def test(self):
+            """Test."""
             class Dset(Dataset):
                 def __len__(self):
                     return 100
+
                 def __getitem__(self, i):
                     return i
 
@@ -87,7 +96,5 @@ if __name__ == '__main__':
                 used_inds.extend(batch.tolist())
             assert len(used_inds) == 100
             assert len(set(used_inds)) == 100
-
-
 
         unittest.main()
