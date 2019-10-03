@@ -21,7 +21,7 @@ class DQN(ReplayBufferTrainer):
     def __init__(self,
                  logdir,
                  env_fn,
-                 qfunction=QFunction,
+                 qf_fn,
                  optimizer=torch.optim.RMSprop,
                  gamma=0.99,
                  huber_loss=True,
@@ -44,8 +44,8 @@ class DQN(ReplayBufferTrainer):
                                            1.0)
 
         self.eval_env = self.make_eval_env()
-        self.qf = qfunction(self.eval_env).to(self.device)
-        self.qf_targ = qfunction(self.eval_env).to(self.device)
+        self.qf = qf_fn(self.eval_env).to(self.device)
+        self.qf_targ = qf_fn(self.eval_env).to(self.device)
         self.opt = optimizer(self.qf.parameters())
         if huber_loss:
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
@@ -164,9 +164,14 @@ if __name__ == '__main__':
             """Test."""
             def env_fn(rank):
                 return make_atari_env('Pong', rank=rank, frame_stack=4)
+
+            def qf_fn(env):
+                return QFunction(NatureDQN(env.observation_space,
+                                           env.action_space))
+
             ql = DQN('logs',
                      env_fn,
-                     qfunction=lambda env: QFunction(env, NatureDQN),
+                     qf_fn,
                      learning_starts=100,
                      buffer_size=200,
                      update_period=4,

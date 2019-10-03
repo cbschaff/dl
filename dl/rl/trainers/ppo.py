@@ -19,7 +19,7 @@ class PPO(RolloutTrainer):
     def __init__(self,
                  logdir,
                  env_fn,
-                 policy=Policy,
+                 policy_fn,
                  optimizer=torch.optim.Adam,
                  epochs_per_rollout=10,
                  max_grad_norm=None,
@@ -35,7 +35,7 @@ class PPO(RolloutTrainer):
         self.vf_coef = vf_coef
         self.clip_param = clip_param
 
-        self.pi = policy(self.env).to(self.device)
+        self.pi = policy_fn(self.env).to(self.device)
         self.opt = optimizer(self.pi.parameters())
         self.init_rollout_storage(self.pi(self._ob).state_out, ['logp'])
         self.mse = nn.MSELoss(reduction='none')
@@ -160,9 +160,14 @@ if __name__ == '__main__':
             """Test feed forward ppo."""
             def env_fn(rank):
                 return make_atari_env('Pong', rank=rank, frame_stack=4)
+
+            def policy_fn(env):
+                return Policy(NatureDQN(env.observation_space,
+                                        env.action_space))
+
             ppo = PPO('test',
                       env_fn,
-                      policy=lambda env: Policy(env, NatureDQN),
+                      policy_fn,
                       maxt=1000,
                       eval=True,
                       eval_period=1000)

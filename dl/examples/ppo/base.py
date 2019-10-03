@@ -1,5 +1,5 @@
 """Define networks for PPO experiments."""
-from dl.rl.modules import ActorCriticBase
+from dl.rl.modules import ActorCriticBase, Policy
 from dl.rl.util import conv_out_shape
 from dl.modules import Categorical, MaskedLSTM, TimeAndBatchUnflattener
 import torch.nn.functional as F
@@ -8,7 +8,6 @@ import numpy as np
 import gin
 
 
-@gin.configurable
 class A3CCNN(ActorCriticBase):
     """Deep network from https://arxiv.org/abs/1602.01783."""
 
@@ -35,7 +34,6 @@ class A3CCNN(ActorCriticBase):
         return self.dist(x), self.vf(x)
 
 
-@gin.configurable
 class A3CRNN(ActorCriticBase):
     """Deep recurrent network from https://arxiv.org/abs/1602.01783."""
 
@@ -68,3 +66,15 @@ class A3CRNN(ActorCriticBase):
             x, state_out = self.lstm(self.tbf(x, state_in[0]), state_in, mask)
         x = self.tbf.flatten(x)
         return self.dist(x), self.vf(x), state_out
+
+
+@gin.configurable
+def a3c_cnn_fn(env):
+    """Create a3c conv net policy."""
+    return Policy(A3CCNN(env.observation_space, env.action_space))
+
+
+@gin.configurable
+def a3c_rnn_fn(env):
+    """Create a3c recurrent policy."""
+    return Policy(A3CRNN(env.observation_space, env.action_space))

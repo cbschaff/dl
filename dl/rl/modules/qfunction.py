@@ -9,10 +9,10 @@ from collections import namedtuple
 class QFunction(nn.Module):
     """Qfunction module."""
 
-    def __init__(self, env, base):
+    def __init__(self, base):
         """Init."""
         super().__init__()
-        self.base = base(env.observation_space, env.action_space)
+        self.base = base
         assert isinstance(self.base, (DiscreteQFunctionBase,
                                       ContinuousQFunctionBase))
         self.discrete = isinstance(self.base, DiscreteQFunctionBase)
@@ -75,7 +75,7 @@ if __name__ == '__main__':
                                                            self.action_space.n))
 
             env = gym.make('CartPole-v1')
-            q = QFunction(env, Base)
+            q = QFunction(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             outs = q(ob[None])
@@ -100,7 +100,7 @@ if __name__ == '__main__':
                     return torch.from_numpy(np.random.rand(ob.shape[0], 1))
 
             env = gym.make('CartPole-v1')
-            q = QFunction(env, Base)
+            q = QFunction(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             ac = torch.from_numpy(np.array([[1]]))

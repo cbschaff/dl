@@ -18,6 +18,7 @@ DQN.maxseconds = None
 DQN.gpu = True
 
 DQN.env_fn = @make_atari_env
+DQN.qf_fn = @nature_dqn_fn
 DQN.nenv = 1
 DQN.norm_observations = False
 DQN.eval_num_episodes = 20
@@ -37,10 +38,6 @@ DQN.eval_eps = 0.05
 DQN.target_update_period = 10000
 DQN.batch_size = 32
 DQN.log_period = 10
-
-
-
-QFunction.base = @NatureDQN
 
 Checkpointer.ckpt_period = 1000000
 

@@ -1,5 +1,5 @@
 """Defines network for DQN experiments."""
-from dl.rl.modules import DiscreteQFunctionBase
+from dl.rl.modules import DiscreteQFunctionBase, QFunction
 from dl.rl.util import conv_out_shape
 import torch.nn.functional as F
 import torch.nn as nn
@@ -7,7 +7,6 @@ import numpy as np
 import gin
 
 
-@gin.configurable
 class NatureDQN(DiscreteQFunctionBase):
     """Deep network from https://www.nature.com/articles/nature14236."""
 
@@ -31,3 +30,9 @@ class NatureDQN(DiscreteQFunctionBase):
         x = F.relu(self.conv3(x))
         x = F.relu(self.fc(x.view(-1, self.nunits)))
         return self.qf(x)
+
+
+@gin.configurable
+def nature_dqn_fn(env):
+    """Create nature dqn qfunction."""
+    return QFunction(NatureDQN(env.observation_space, env.action_space))

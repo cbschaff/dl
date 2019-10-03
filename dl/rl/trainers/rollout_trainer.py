@@ -211,7 +211,8 @@ if __name__ == '__main__':
         def __init__(self, *args, base=None, **kwargs):
             """Init."""
             super().__init__(*args, **kwargs)
-            self.pi = Policy(self.env, base)
+            self.pi = Policy(base(self.env.observation_space,
+                                  self.env.action_space))
 
             self.init_rollout_storage(self.pi(self._ob).state_out, ['key1'])
 

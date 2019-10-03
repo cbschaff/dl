@@ -7,6 +7,7 @@ optim.Adam.betas = (0.9, 0.999)
 optim.Adam.eps = 1e-5
 
 PPO.env_fn = @make_atari_env
+PPO.policy_fn = @a3c_cnn_fn
 PPO.nenv = 8
 PPO.norm_observations = False
 PPO.eval_num_episodes = 20
@@ -33,9 +34,6 @@ PPO.save_period = 1000000
 PPO.maxseconds = None
 PPO.gpu = True
 
-
-Policy.base = @A3CCNN
-
 Checkpointer.ckpt_period = 1000000
 
 make_atari_env.game_name = "Breakout"
@@ -46,7 +44,6 @@ make_atari_env.frameskip = 4
 make_atari_env.episode_life = True
 make_atari_env.clip_rewards = True
 make_atari_env.frame_stack = 4
-
 
 ObsNorm.steps = 10000
 ObsNorm.mean = None

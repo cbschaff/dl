@@ -112,7 +112,8 @@ if __name__ == '__main__':
         def __init__(self, *args, base=None, **kwargs):
             """Init."""
             super().__init__(*args, **kwargs)
-            self.qf = QFunction(self.env, base)
+            self.qf = QFunction(base(self.env.observation_space,
+                                     self.env.action_space))
 
         def act(self, ob):
             """Act."""

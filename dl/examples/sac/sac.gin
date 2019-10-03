@@ -14,6 +14,9 @@ SAC.maxseconds = None
 SAC.gpu = True
 
 SAC.env_fn = @make_env
+SAC.policy_fn = @policy_fn
+SAC.qf_fn = @qf_fn
+SAC.vf_fn = @vf_fn
 SAC.nenv = 1
 SAC.norm_observations = True
 SAC.eval_num_episodes = 20
@@ -45,12 +48,7 @@ Checkpointer.ckpt_period = 10000
 
 make_env.env_id = "LunarLanderContinuous-v2"
 
-Policy.base        = @FeedForwardPolicyBase
-ValueFunction.base = @FeedForwardVFBase
-QFunction.base     = @AppendActionFeedForwardQFBase
-
 TanhDiagGaussian.constant_log_std = False
-
 
 ObsNorm.steps = 10000
 ObsNorm.mean = None

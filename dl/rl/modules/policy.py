@@ -9,10 +9,10 @@ from collections import namedtuple
 class Policy(nn.Module):
     """Policy module."""
 
-    def __init__(self, env, base):
+    def __init__(self, base):
         """init."""
         super().__init__()
-        self.base = base(env.observation_space, env.action_space)
+        self.base = base
         assert isinstance(self.base, (PolicyBase, ActorCriticBase))
         self.outputs = namedtuple('Outputs',
                                   ['action', 'value', 'dist', 'state_out'])
@@ -89,7 +89,7 @@ if __name__ == '__main__':
                     return CatDist(torch.from_numpy(logits))
 
             env = gym.make('CartPole-v1')
-            pi = Policy(env, Base)
+            pi = Policy(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             outs = pi(ob[None])
@@ -117,7 +117,7 @@ if __name__ == '__main__':
                     return CatDist(torch.from_numpy(logits)), state_in + 1
 
             env = gym.make('CartPole-v1')
-            pi = Policy(env, Base)
+            pi = Policy(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             outs = pi(ob[None])
@@ -137,7 +137,7 @@ if __name__ == '__main__':
                     return CatDist(torch.from_numpy(logits)), v
 
             env = gym.make('CartPole-v1')
-            pi = Policy(env, Base)
+            pi = Policy(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             outs = pi(ob[None])
@@ -166,7 +166,7 @@ if __name__ == '__main__':
                     return CatDist(torch.from_numpy(logits)), v, state_in + 1
 
             env = gym.make('CartPole-v1')
-            pi = Policy(env, Base)
+            pi = Policy(Base(env.observation_space, env.action_space))
             ob = env.reset()
 
             outs = pi(ob[None])

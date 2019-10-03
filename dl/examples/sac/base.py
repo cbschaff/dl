@@ -1,5 +1,7 @@
 """Defines networks for SAC experiments."""
 from dl.rl.modules import PolicyBase, ContinuousQFunctionBase, ValueFunctionBase
+from dl.rl.modules import QFunction, ValueFunction
+from dl.rl.trainers.sac import UnnormActionPolicy
 from dl.modules import TanhDiagGaussian
 import torch
 import torch.nn as nn
@@ -7,7 +9,6 @@ import torch.nn.functional as F
 import gin
 
 
-@gin.configurable
 class FeedForwardPolicyBase(PolicyBase):
     """Policy network."""
 
@@ -26,7 +27,6 @@ class FeedForwardPolicyBase(PolicyBase):
         return self.dist(x)
 
 
-@gin.configurable
 class AppendActionFeedForwardQFBase(ContinuousQFunctionBase):
     """Q network."""
 
@@ -46,7 +46,6 @@ class AppendActionFeedForwardQFBase(ContinuousQFunctionBase):
         return self.qvalue(x)
 
 
-@gin.configurable
 class FeedForwardVFBase(ValueFunctionBase):
     """Value network."""
 
@@ -63,3 +62,24 @@ class FeedForwardVFBase(ValueFunctionBase):
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         return self.value(x)
+
+
+@gin.configurable
+def policy_fn(env):
+    """Create a policy network."""
+    return UnnormActionPolicy(FeedForwardPolicyBase(env.observation_space,
+                                                    env.action_space))
+
+
+@gin.configurable
+def qf_fn(env):
+    """Create a qfunction network."""
+    return QFunction(AppendActionFeedForwardQFBase(env.observation_space,
+                                                   env.action_space))
+
+
+@gin.configurable
+def vf_fn(env):
+    """Create a value function network."""
+    return ValueFunction(FeedForwardVFBase(env.observation_space,
+                                           env.action_space))

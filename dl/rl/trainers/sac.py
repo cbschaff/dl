@@ -46,10 +46,10 @@ class SAC(ReplayBufferTrainer):
     def __init__(self,
                  logdir,
                  env_fn,
+                 policy_fn,
+                 qf_fn,
+                 vf_fn,
                  optimizer=torch.optim.Adam,
-                 policy=UnnormActionPolicy,
-                 qf=QFunction,
-                 vf=ValueFunction,
                  batch_size=256,
                  policy_lr=1e-3,
                  qf_lr=1e-3,
@@ -85,11 +85,11 @@ class SAC(ReplayBufferTrainer):
         self.log_period = log_period
 
         self.eval_env = self.make_eval_env()
-        self.pi = policy(self.eval_env)
-        self.qf1 = qf(self.eval_env)
-        self.qf2 = qf(self.eval_env)
-        self.vf = vf(self.eval_env)
-        self.target_vf = vf(self.eval_env)
+        self.pi = policy_fn(self.eval_env)
+        self.qf1 = qf_fn(self.eval_env)
+        self.qf2 = qf_fn(self.eval_env)
+        self.vf = vf_fn(self.eval_env)
+        self.target_vf = vf_fn(self.eval_env)
 
         self.pi.to(self.device)
         self.qf1.to(self.device)
@@ -357,6 +357,19 @@ if __name__ == '__main__':
         """Environment function."""
         return make_env('LunarLanderContinuous-v2', rank=rank)
 
+    def policy_fn(env):
+        """Create a policy."""
+        return UnnormActionPolicy(PiBase(env.observation_space,
+                                         env.action_space))
+
+    def qf_fn(env):
+        """Create a qfunction."""
+        return QFunction(QFBase(env.observation_space, env.action_space))
+
+    def vf_fn(env):
+        """Create a value function."""
+        return ValueFunction(VFBase(env.observation_space, env.action_space))
+
     class TestSAC(unittest.TestCase):
         """Test case."""
 
@@ -364,9 +377,9 @@ if __name__ == '__main__':
             """Test."""
             sac = SAC('logs',
                       env_fn,
-                      policy=lambda env: UnnormActionPolicy(env, base=PiBase),
-                      qf=lambda env: QFunction(env, base=QFBase),
-                      vf=lambda env: ValueFunction(env, base=VFBase),
+                      policy_fn,
+                      qf_fn,
+                      vf_fn,
                       learning_starts=300,
                       eval_num_episodes=1,
                       buffer_size=500,
