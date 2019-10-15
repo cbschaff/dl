@@ -1,8 +1,6 @@
 """Main script for training models."""
 import dl
 import argparse
-import gin
-import os
 
 
 if __name__ == '__main__':

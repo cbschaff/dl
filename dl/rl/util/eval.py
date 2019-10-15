@@ -114,27 +114,46 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         A dict of episode stats
 
     """
-    assert not isinstance(env, (VecEnv, VecEnvWrapper)), (
-        "Cannot record with VecEnvs.")
+    env = _wrap_env(env)
     tmpdir = os.path.join(tempfile.gettempdir(),
                           'video_' + str(time.monotonic()))
     os.makedirs(tmpdir)
     id = 0
     actor = Actor(actor, device)
-    for i in range(nepisodes):
-        ob = env.reset()
-        done = False
-        while not done:
-            try:
-                rgb = env.render('rgb_array')
-            except Exception:
-                logger.log("Error while rendering.")
-                return
-            imwrite(os.path.join(tmpdir, '{:05d}.png'.format(id)), rgb)
+    episodes = 0
+    obs = env.reset()
+    dones = None
+    ims = None
+
+    def write_ims(ims, id):
+        for im in ims:
+            imwrite(os.path.join(tmpdir, '{:05d}.png'.format(id)), im)
             id += 1
-            ob, r, done, info = env.step(actor(ob[None], np.array([done]))[0])
-            if 'episode_info' in info:
-                done = info['episode_info']['done']
+        return id
+
+    while episodes < nepisodes:
+        try:
+            rgbs = env.get_images()
+        except Exception:
+            logger.log("Error while rendering.")
+            return
+        if not ims:
+            ims = [[] for rgb in rgbs]
+        for i, rgb in enumerate(rgbs):
+            ims[i].append(rgb)
+        _, _, dones, infos = env.step(actor(obs, dones))
+        for i, done in enumerate(dones):
+            if 'episode_info' in infos[i]:
+                if infos[i]['episode_info']['done']:
+                    print(len(ims[i]))
+                    id = write_ims(ims[i], id)
+                    ims[i] = []
+                    episodes += 1
+                dones[i] = infos[i]['episode_info']['done']
+            elif done:
+                id = write_ims(ims[i], id)
+                ims[i] = []
+                episodes += 1
 
     sp.call(['ffmpeg', '-r', str(fps), '-f', 'image2', '-i',
              os.path.join(tmpdir, '%05d.png'), '-vcodec', 'libx264',

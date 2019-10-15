@@ -50,7 +50,8 @@ class RLTrainer(Trainer):
                 return self.env_fn(rank=rank)
             return _thunk
         if self.nenv > 1:
-            env = SubprocVecEnv([_env(i) for i in range(self.nenv)])
+            env = SubprocVecEnv([_env(i) for i in range(self.nenv)],
+                                context='fork')
         else:
             env = DummyVecEnv([_env(0)])
         env = self.add_obs_norm_wrapper(env)
