@@ -61,6 +61,7 @@ class EpisodeLogger(Wrapper):
         self.t = tstart
         self.eplen = 0
         self.eprew = 0.
+        self._eval = False
 
     def reset(self, **kwargs):
         """Reset."""
@@ -71,26 +72,50 @@ class EpisodeLogger(Wrapper):
     def step(self, action):
         """Step."""
         ob, r, done, info = self.env.step(action)
-        self.t += 1
+        if not self._eval:
+            self.t += 1
         self.eplen += 1
         self.eprew += r
         if done:
-            logger.add_scalar('env/episode_length', self.eplen, self.t,
-                              time.time())
-            logger.add_scalar('env/episode_reward', self.eprew, self.t,
-                              time.time())
+            if not self._eval:
+                logger.add_scalar('env/episode_length', self.eplen, self.t,
+                                  time.time())
+                logger.add_scalar('env/episode_reward', self.eprew, self.t,
+                                  time.time())
             self.eplen = 0
             self.eprew = 0.
         # log unwrapped episode stats if they exist
         if 'episode_info' in info:
             epinfo = info['episode_info']
-            if epinfo['done']:
+            if epinfo['done'] and not self._eval:
                 logger.add_scalar('env/unwrapped_episode_length',
                                   epinfo['length'], self.t, time.time())
                 logger.add_scalar('env/unwrapped_episode_reward',
                                   epinfo['reward'], self.t, time.time())
 
         return ob, r, done, info
+
+    def eval(self):
+        """Set the environment to eval mode.
+
+        Eval mode disables logging and stops counting steps.
+        """
+        self._eval = True
+
+    def train(self):
+        """Set the environment to train mode.
+
+        Train mode counts steps and logs episode stats.
+        """
+        self._eval = False
+
+    def state_dict(self):
+        """State dict."""
+        return {'t': self.t}
+
+    def load_state_dict(self, state_dict):
+        """Load state dict."""
+        self.t = state_dict['t']
 
 
 class VecEpisodeLogger(VecEnvWrapper):
@@ -102,11 +127,11 @@ class VecEpisodeLogger(VecEnvWrapper):
         self.t = tstart
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
+        self._eval = False
 
     def reset(self):
         """Reset."""
         obs = self.venv.reset()
-        self.t += sum(self.lens)
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
         return obs
@@ -114,28 +139,52 @@ class VecEpisodeLogger(VecEnvWrapper):
     def step_wait(self):
         """Step."""
         obs, rews, dones, infos = self.venv.step_wait()
-        self.t += self.num_envs
+        if not self._eval:
+            self.t += self.num_envs
         self.lens += 1
         self.rews += rews
         for i, done in enumerate(dones):
             if done:
-                logger.add_scalar('env/episode_length', self.lens[i], self.t,
-                                  time.time())
-                logger.add_scalar('env/episode_reward', self.rews[i], self.t,
-                                  time.time())
+                if not self._eval:
+                    logger.add_scalar('env/episode_length', self.lens[i],
+                                      self.t, time.time())
+                    logger.add_scalar('env/episode_reward', self.rews[i],
+                                      self.t, time.time())
                 self.lens[i] = 0
                 self.rews[i] = 0.
         # log unwrapped episode stats if they exist
         if 'episode_info' in infos[0]:
             for info in infos:
                 epinfo = info['episode_info']
-                if epinfo['done']:
+                if epinfo['done'] and not self._eval:
                     logger.add_scalar('env/unwrapped_episode_length',
                                       epinfo['length'], self.t, time.time())
                     logger.add_scalar('env/unwrapped_episode_reward',
                                       epinfo['reward'], self.t, time.time())
 
         return obs, rews, dones, infos
+
+    def eval(self):
+        """Set the environment to eval mode.
+
+        Eval mode disables logging and stops counting steps.
+        """
+        self._eval = True
+
+    def train(self):
+        """Set the environment to train mode.
+
+        Train mode counts steps and logs episode stats.
+        """
+        self._eval = False
+
+    def state_dict(self):
+        """State dict."""
+        return {'t': self.t}
+
+    def load_state_dict(self, state_dict):
+        """Load state dict."""
+        self.t = state_dict['t']
 
 
 if __name__ == '__main__':
@@ -173,6 +222,24 @@ if __name__ == '__main__':
             done = False
             while not done:
                 _, _, done, _ = env.step(env.action_space.sample())
+            state = env.state_dict()
+            assert state['t'] == env.t
+            state['t'] = 0
+            env.load_state_dict(state)
+            assert env.t == 0
+
+            env.eval()
+            env.reset()
+            for _ in range(10):
+                env.step(env.action_space.sample())
+            assert env.t == 0
+            assert env.eplen == 10
+            env.train()
+            for _ in range(10):
+                env.step(env.action_space.sample())
+            assert env.t == 10
+            assert env.eplen == 20
+
             logger.flush()
             shutil.rmtree('./.test')
 
@@ -196,6 +263,23 @@ if __name__ == '__main__':
             env.reset()
             for _ in range(5000):
                 env.step([env.action_space.sample() for _ in range(nenv)])
+            state = env.state_dict()
+            assert state['t'] == env.t
+            state['t'] = 0
+            env.load_state_dict(state)
+            assert env.t == 0
+
+            env.eval()
+            env.reset()
+            for _ in range(10):
+                env.step([env.action_space.sample() for _ in range(nenv)])
+            assert env.t == 0
+            assert np.allclose(env.lens, 10)
+            env.train()
+            for _ in range(10):
+                env.step([env.action_space.sample() for _ in range(nenv)])
+            assert env.t == 10 * nenv
+            assert np.allclose(env.lens, 20)
             logger.flush()
             shutil.rmtree('./.test')
 

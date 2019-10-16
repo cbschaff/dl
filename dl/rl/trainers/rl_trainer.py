@@ -104,10 +104,10 @@ class RLTrainer(Trainer):
                 # loading the ckpt twice, but guarantees the correct
                 # normalization is used.
                 state_dict = self.ckptr.load(max(ckpts))
-                env = wrapper_class(env, find_norm_params=False)
+                env = wrapper_class(env)
                 env.load_state_dict(state_dict['obs_norm'])
             else:
-                env = wrapper_class(env, find_norm_params=True)
+                env = wrapper_class(env)
         return env
 
     def _save(self, state_dict):
@@ -155,7 +155,10 @@ class RLTrainer(Trainer):
 
     def close(self):
         """Close environment."""
-        self.env.close()
+        try:
+            self.env.close()
+        except Exception:
+            pass
         super().close()
 
 

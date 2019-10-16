@@ -8,16 +8,17 @@ import time
 import gin
 
 
-@gin.configurable(blacklist=['norm', 'find_norm_params'])
+@gin.configurable(blacklist=['norm'])
 class ObsNorm(object):
     """Observation normalization for vecorized environments.
 
     Collects data from a random policy and computes a fixed normalization.
+    Computing norm params is done lazily when normalization constants
+    are needed and unknown.
     """
 
     def __init__(self,
                  norm=True,
-                 find_norm_params=True,
                  steps=10000,
                  mean=None,
                  std=None,
@@ -31,21 +32,27 @@ class ObsNorm(object):
         self.log = log
         self.log_prob = log_prob
         self.t = 0
+        self._eval = False
+        self.mean = None
+        self.std = None
 
         if mean is not None and std is not None:
             self.mean = mean
-            self.std = std
-        elif find_norm_params and self.should_norm:
-            self.mean, self.std = get_ob_norm(self.env, self.steps)
-        else:
-            self.mean = np.zeros(self.observation_space.shape, dtype=np.float32)
-            self.std = np.ones(self.observation_space.shape, dtype=np.float32)
-        self.std = np.maximum(self.std, eps)
+            self.std = np.maximum(std, self.eps)
+
+    def find_norm_params(self):
+        """Calculate mean and std with a random policy to collect data."""
+        self.mean, std = get_ob_norm(self.env, self.steps)
+        self.std = np.maximum(std, self.eps)
 
     def _normalize(self, obs):
+        if not self.should_norm:
+            return obs
+        if self.mean is None or self.std is None:
+            self.find_norm_params()
         if not isinstance(obs, np.ndarray):
             obs = np.asarray(obs)
-        if obs.dtype not in [np.float32, np.float64]:
+        if obs.dtype is not np.float32:
             obs = obs.astype(np.float32)
         return (obs - self.mean) / self.std
 
@@ -65,9 +72,8 @@ class ObsNorm(object):
 
     def norm_and_log(self, obs):
         """Norm observations and log."""
-        if self.should_norm:
-            obs = self._normalize(obs)
-        if self.log and self.log_prob > np.random.rand():
+        obs = self._normalize(obs)
+        if not self._eval and self.log and self.log_prob > np.random.rand():
             percentiles = {
                 '00': np.quantile(obs, 0.0),
                 '10': np.quantile(obs, 0.1),
@@ -80,6 +86,20 @@ class ObsNorm(object):
             logger.add_scalars('ob_stats/percentiles', percentiles, self.t,
                                time.time())
         return obs
+
+    def eval(self):
+        """Set the environment to eval mode.
+
+        Eval mode disables logging and stops counting steps.
+        """
+        self._eval = True
+
+    def train(self):
+        """Set the environment to train mode.
+
+        Train mode counts steps and logs obs distribution if self.log is True.
+        """
+        self._eval = False
 
 
 class ObsNormWrapper(Wrapper, ObsNorm):
@@ -98,7 +118,8 @@ class ObsNormWrapper(Wrapper, ObsNorm):
     def step(self, ac):
         """Step."""
         ob, r, done, info = self.env.step(ac)
-        self.t += 1
+        if not self._eval:
+            self.t += 1
         return self.norm_and_log(ob), r, done, info
 
 
@@ -114,7 +135,8 @@ class VecObsNormWrapper(VecEnvWrapper, ObsNorm):
     def step_wait(self):
         """Step."""
         obs, rews, dones, infos = self.venv.step_wait()
-        self.t += self.num_envs
+        if not self._eval:
+            self.t += self.num_envs
         return self.norm_and_log(obs), rews, dones, infos
 
     def reset(self):
@@ -144,13 +166,31 @@ if __name__ == '__main__':
         def test_vec(self):
             """Test vec wrapper."""
             logger.configure('./.test')
-            env = make_vec_env('CartPole-v1', 10)
+            nenv = 10
+            env = make_vec_env('CartPole-v1', nenv)
             env = VecObsNormWrapper(env, log_prob=1.)
             env.reset()
             assert env.t == 0
             for _ in range(100):
-                env.step([env.action_space.sample() for _ in range(10)])
+                env.step([env.action_space.sample() for _ in range(nenv)])
             assert env.t == 1000
+            state = env.state_dict()
+            assert state['t'] == env.t
+            assert np.allclose(state['mean'], env.mean)
+            assert np.allclose(state['std'], env.std)
+            state['t'] = 0
+            env.load_state_dict(state)
+            assert env.t == 0
+
+            env.eval()
+            env.reset()
+            for _ in range(10):
+                env.step([env.action_space.sample() for _ in range(nenv)])
+            assert env.t == 0
+            env.train()
+            for _ in range(10):
+                env.step([env.action_space.sample() for _ in range(nenv)])
+            assert env.t == 10 * nenv
             print(env.mean)
             print(env.std)
             shutil.rmtree('./.test')
@@ -167,6 +207,23 @@ if __name__ == '__main__':
                 if done:
                     env.reset()
             assert env.t == 100
+            state = env.state_dict()
+            assert state['t'] == env.t
+            assert np.allclose(state['mean'], env.mean)
+            assert np.allclose(state['std'], env.std)
+            state['t'] = 0
+            env.load_state_dict(state)
+            assert env.t == 0
+
+            env.eval()
+            env.reset()
+            for _ in range(3):
+                env.step(env.action_space.sample())
+            assert env.t == 0
+            env.train()
+            for _ in range(3):
+                env.step(env.action_space.sample())
+            assert env.t == 3
             print(env.mean)
             print(env.std)
             shutil.rmtree('./.test')
