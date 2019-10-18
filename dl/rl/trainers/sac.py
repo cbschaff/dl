@@ -45,8 +45,8 @@ class UnnormActionPolicy(Policy):
             low = self.base.action_space.low
             high = self.base.action_space.high
             if low is not None and high is not None:
-                low = torch.from_numpy(low)
-                high = torch.from_numpy(high)
+                low = torch.from_numpy(low).to(outs.action.device)
+                high = torch.from_numpy(high).to(outs.action.device)
                 ac = low + 0.5 * (outs.action + 1) * (high - low)
                 outs = self.outputs(action=ac, value=outs.value, dist=outs.dist,
                                     state_out=outs.state_out)
