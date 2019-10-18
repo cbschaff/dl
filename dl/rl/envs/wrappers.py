@@ -102,6 +102,21 @@ class EpsilonGreedy(ActionWrapper):
         return action
 
 
+class VecEpsilonGreedy(VecEnvWrapper):
+    """Epsilon greedy wrapper for vectorized environments."""
+
+    def __init__(self, venv, epsilon):
+        """Init."""
+        super().__init__(venv)
+        self.epsilon = epsilon
+
+    def step(self, actions):
+        """Wrap actions."""
+        if np.random.rand() < self.epsilon:
+            actions = [self.action_space.sample() for _ in range(self.num_envs)]
+        self.venv.step(actions)
+
+
 if __name__ == '__main__':
     import unittest
     import gym

@@ -12,7 +12,7 @@ import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.envs import VecFrameStack
+from dl.rl.envs import VecFrameStack, VecEpsilonGreedy
 from baselines.common.schedules import LinearSchedule
 
 
@@ -62,6 +62,7 @@ class DQN(RLTrainer):
                  huber_loss=True,
                  exploration_timesteps=1000000,
                  final_eps=0.1,
+                 eval_eps=0.05,
                  target_update_period=10000,
                  batch_size=32,
                  log_period=10,
@@ -74,6 +75,7 @@ class DQN(RLTrainer):
         self.batch_size = batch_size
         self.learning_starts = learning_starts
         self.update_period = update_period
+        self.eval_eps = eval_eps
         self.target_update_period = target_update_period - (
             target_update_period % self.update_period)
         self.log_period = log_period
@@ -162,7 +164,8 @@ class DQN(RLTrainer):
 
     def evaluate(self):
         """Evaluate."""
-        eval_env = VecFrameStack(self.env, self.frame_stack)
+        eval_env = VecEpsilonGreedy(VecFrameStack(self.env, self.frame_stack),
+                                    self.eval_eps)
         self.rl_evaluate(eval_env, self.qf)
         self.rl_record(eval_env, self.qf)
         self.data_manager.manual_reset()
