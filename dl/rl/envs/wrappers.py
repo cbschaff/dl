@@ -116,6 +116,14 @@ class VecEpsilonGreedy(VecEnvWrapper):
             actions = [self.action_space.sample() for _ in range(self.num_envs)]
         self.venv.step(actions)
 
+    def step_wait(self):
+        """Step."""
+        return self.venv.step_wait()
+
+    def reset(self):
+        """Reset."""
+        return self.venv.reset()
+
 
 if __name__ == '__main__':
     import unittest
