@@ -1,5 +1,6 @@
 """Environment wrappers."""
 from gym import Wrapper, ObservationWrapper, ActionWrapper
+from baselines.common.vec_env import VecEnvWrapper
 from gym.spaces import Box
 import numpy as np
 
@@ -55,6 +56,37 @@ class FrameStack(Wrapper):
         return self.frames, reward, done, info
 
 
+class VecFrameStack(VecEnvWrapper):
+    """Frame stack wrapper for vectorized environments."""
+
+    def __init__(self, venv, k):
+        """Init."""
+        super().__init__(venv)
+        self.k = k
+        ospace = self.observation_space
+        shp = ospace.shape
+        self.shape = shp[0]
+        self.frames = np.zeros((self.num_envs, k*shp[0], *shp[1:]),
+                               dtype=ospace.dtype)
+        low = np.repeat(ospace.low, self.k, axis=0)
+        high = np.repeat(ospace.high, self.k, axis=0)
+        self.observation_space = Box(low=low, high=high, dtype=ospace.dtype)
+
+    def reset(self):
+        """Reset."""
+        ob = self.venv.reset()
+        self.frames[:] = 0
+        self.frames[:, -self.shape:] = ob
+        return self.frames
+
+    def step_wait(self):
+        """Step."""
+        ob, reward, done, info = self.venv.step_wait()
+        self.frames[:, :-self.shape] = self.frames[:, self.shape:]
+        self.frames[:, -self.shape:] = ob
+        return self.frames, reward, done, info
+
+
 class EpsilonGreedy(ActionWrapper):
     """Epsilon greedy wrapper."""
 
@@ -73,6 +105,18 @@ class EpsilonGreedy(ActionWrapper):
 if __name__ == '__main__':
     import unittest
     import gym
+    from dl.rl.envs import VecEpisodeLogger, make_atari_env
+    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+
+    def make_env(nenv):
+        """Create a training environment."""
+        def _env(rank):
+            def _thunk():
+                return make_atari_env("Pong", rank=rank)
+            return _thunk
+        env = SubprocVecEnv([_env(i) for i in range(nenv)],
+                            context='fork')
+        return VecEpisodeLogger(env)
 
     class Test(unittest.TestCase):
         """Test."""
@@ -104,5 +148,17 @@ if __name__ == '__main__':
             assert ob.shape == (4*s[0],)
             ob, _, _, _ = env.step(env.action_space.sample())
             assert ob.shape == (4*s[0],)
+
+        def test_vec_frame_stack(self):
+            """Test vec frame stack wrapper."""
+            nenv = 2
+            env = make_env(nenv)
+            s = env.observation_space.shape
+            env = VecFrameStack(env, 4)
+            ob = env.reset()
+            assert ob.shape == (nenv, 4*s[0], s[1], s[2])
+            ob, _, _, _ = env.step([env.action_space.sample()
+                                    for _ in range(nenv)])
+            assert ob.shape == (nenv, 4*s[0], s[1], s[2])
 
     unittest.main()

@@ -34,7 +34,6 @@ DQN.gamma = 0.99
 DQN.huber_loss = True
 DQN.exploration_timesteps = 1000000
 DQN.final_eps = 0.1
-DQN.eval_eps = 0.05
 DQN.target_update_period = 10000
 DQN.batch_size = 32
 DQN.log_period = 10

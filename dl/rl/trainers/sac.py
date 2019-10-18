@@ -2,22 +2,36 @@
 
 https://arxiv.org/abs/1801.01290
 """
-from dl.rl.trainers import ReplayBufferTrainer
+from dl.rl.trainers import RLTrainer
+from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.rl.modules import QFunction, Policy, ValueFunction
 from dl.modules import TanhNormal
 from dl import logger
 import gin
+import os
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.envs import FrameStack
+from dl.rl.envs import VecFrameStack
 
 
 def soft_target_update(target_net, net, tau):
     """Soft update totarget network."""
     for tp, p in zip(target_net.parameters(), net.parameters()):
         tp.data.copy_((1. - tau) * tp.data + tau * p.data)
+
+
+class SACActor(object):
+    """SAC actor."""
+
+    def __init__(self, pi):
+        """Init."""
+        self.pi = pi
+
+    def __call__(self, obs):
+        """Act."""
+        return {'action': self.pi(obs).action}
 
 
 @gin.configurable(whitelist=['base'])
@@ -40,7 +54,7 @@ class UnnormActionPolicy(Policy):
 
 
 @gin.configurable(blacklist=['logdir'])
-class SAC(ReplayBufferTrainer):
+class SAC(RLTrainer):
     """SAC algorithm."""
 
     def __init__(self,
@@ -50,6 +64,10 @@ class SAC(ReplayBufferTrainer):
                  qf_fn,
                  vf_fn,
                  optimizer=torch.optim.Adam,
+                 buffer_size=10000,
+                 frame_stack=1,
+                 learning_starts=1000,
+                 update_period=1,
                  batch_size=256,
                  policy_lr=1e-3,
                  qf_lr=1e-3,
@@ -68,6 +86,10 @@ class SAC(ReplayBufferTrainer):
         """Init."""
         super().__init__(logdir, env_fn, **kwargs)
         self.gamma = gamma
+        self.buffer_size = buffer_size
+        self.frame_stack = frame_stack
+        self.learning_starts = learning_starts
+        self.update_period = update_period
         self.batch_size = batch_size
         if target_update_period < self.update_period:
             self.target_update_period = self.update_period
@@ -84,12 +106,12 @@ class SAC(ReplayBufferTrainer):
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
 
-        self.eval_env = self.make_eval_env()
-        self.pi = policy_fn(self.eval_env)
-        self.qf1 = qf_fn(self.eval_env)
-        self.qf2 = qf_fn(self.eval_env)
-        self.vf = vf_fn(self.eval_env)
-        self.target_vf = vf_fn(self.eval_env)
+        eval_env = VecFrameStack(self.env, self.frame_stack)
+        self.pi = policy_fn(eval_env)
+        self.qf1 = qf_fn(eval_env)
+        self.qf2 = qf_fn(eval_env)
+        self.vf = vf_fn(eval_env)
+        self.target_vf = vf_fn(eval_env)
 
         self.pi.to(self.device)
         self.qf1.to(self.device)
@@ -104,6 +126,14 @@ class SAC(ReplayBufferTrainer):
         self.policy_mean_reg_weight = policy_mean_reg_weight
 
         self.target_vf.load_state_dict(self.vf.state_dict())
+
+        self.buffer = ReplayBuffer(buffer_size, frame_stack)
+        self.data_manager = ReplayBufferDataManager(self.buffer,
+                                                    self.env,
+                                                    SACActor(self.pi),
+                                                    self.device,
+                                                    self.learning_starts,
+                                                    self.update_period)
 
         self.automatic_entropy_tuning = automatic_entropy_tuning
         if self.automatic_entropy_tuning:
@@ -124,9 +154,6 @@ class SAC(ReplayBufferTrainer):
         self.qf_criterion = torch.nn.MSELoss()
         self.vf_criterion = torch.nn.MSELoss()
         self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
-
-    def _make_eval_env(self):
-        return FrameStack(self.env_fn(rank=1), self.frame_stack)
 
     def state_dict(self):
         """State dict."""
@@ -168,10 +195,10 @@ class SAC(ReplayBufferTrainer):
 
     def loss(self, batch):
         """Loss function."""
-        ob, ac, rew, next_ob, done = [
-            torch.from_numpy(x).to(self.device) for x in batch]
+        for k in batch:
+            batch[k] = torch.from_numpy(batch[k]).to(self.device)
 
-        pi_out = self.pi(ob, reparameterization_trick=self.rsample)
+        pi_out = self.pi(batch['obs'], reparameterization_trick=self.rsample)
         if self.discrete:
             new_ac = pi_out.action
             logp = pi_out.logp
@@ -186,9 +213,9 @@ class SAC(ReplayBufferTrainer):
                 new_ac, new_pth_ac = pi_out.dist.sample(
                                                     return_pretanh_value=True)
             logp = pi_out.dist.log_prob(new_ac, new_pth_ac)
-        q1 = self.qf1(ob, ac).value
-        q2 = self.qf2(ob, ac).value
-        v = self.vf(ob).value
+        q1 = self.qf1(batch['obs'], batch['action']).value
+        q2 = self.qf2(batch['obs'], batch['action']).value
+        v = self.vf(batch['obs']).value
 
         # alpha loss
         if self.automatic_entropy_tuning:
@@ -203,16 +230,17 @@ class SAC(ReplayBufferTrainer):
             alpha_loss = 0
 
         # qf loss
-        vtarg = self.target_vf(next_ob).value
-        qtarg = self.reward_scale * rew + (1.0 - done) * self.gamma * vtarg
+        vtarg = self.target_vf(batch['next_obs']).value
+        qtarg = self.reward_scale * batch['reward'] + (
+                    (1.0 - batch['done']) * self.gamma * vtarg)
         assert qtarg.shape == q1.shape
         assert qtarg.shape == q2.shape
         qf1_loss = self.qf_criterion(q1, qtarg.detach())
         qf2_loss = self.qf_criterion(q2, qtarg.detach())
 
         # vf loss
-        q1_new = self.qf1(ob, new_ac).value
-        q2_new = self.qf2(ob, new_ac).value
+        q1_new = self.qf1(batch['obs'], new_ac).value
+        q2_new = self.qf2(batch['obs'], new_ac).value
         q = torch.min(q1_new, q2_new)
         vtarg = q - alpha * logp
         assert v.shape == vtarg.shape
@@ -258,7 +286,7 @@ class SAC(ReplayBufferTrainer):
 
     def step(self):
         """Step optimization."""
-        self.step_until_update()
+        self.t += self.data_manager.step_until_update()
         if self.t % self.target_update_period == 0:
             soft_target_update(self.target_vf, self.vf,
                                self.target_smoothing_coef)
@@ -288,8 +316,21 @@ class SAC(ReplayBufferTrainer):
 
     def evaluate(self):
         """Evaluate."""
-        self.rl_evaluate(self.pi)
-        self.rl_record(self.pi)
+        eval_env = VecFrameStack(self.env, self.frame_stack)
+        self.rl_evaluate(eval_env, self.pi)
+        self.rl_record(eval_env, self.pi)
+
+    def _save(self, state_dict):
+        # save buffer seperately and only once (because it can be huge)
+        np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
+                 **self.buffer.state_dict())
+        super()._save(state_dict)
+
+    def _load(self, state_dict):
+        self.buffer.load_state_dict(np.load(os.path.join(self.ckptr.ckptdir,
+                                                         'buffer.npz')))
+        super()._load(state_dict)
+        self.data_manager.manual_reset()
 
 
 if __name__ == '__main__':

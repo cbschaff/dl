@@ -40,9 +40,12 @@ class ObsNorm(object):
             self.mean = mean
             self.std = np.maximum(std, self.eps)
 
+    def _env(self):
+        return self.env if hasattr(self, 'env') else self.venv
+
     def find_norm_params(self):
         """Calculate mean and std with a random policy to collect data."""
-        self.mean, std = get_ob_norm(self.env, self.steps)
+        self.mean, std = get_ob_norm(self._env(), self.steps)
         self.std = np.maximum(std, self.eps)
 
     def _normalize(self, obs):
@@ -129,7 +132,6 @@ class VecObsNormWrapper(VecEnvWrapper, ObsNorm):
     def __init__(self, venv, *args, **kwargs):
         """Init."""
         VecEnvWrapper.__init__(self, venv)
-        self.env = self.venv  # make naming consistent...
         ObsNorm.__init__(self, *args, **kwargs)
 
     def step_wait(self):

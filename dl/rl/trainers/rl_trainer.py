@@ -1,8 +1,8 @@
 """Extends the Trainer class with environment utils."""
 from dl import Trainer
 from dl import logger
-from dl.rl.envs import VecEpisodeLogger, ObsNormWrapper, VecObsNormWrapper
-from dl.rl.util import rl_evaluate, rl_record, find_wrapper, is_vec_env
+from dl.rl.envs import VecEpisodeLogger, VecObsNormWrapper
+from dl.rl.util import rl_evaluate, rl_record, misc
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 import gin
@@ -23,7 +23,7 @@ class RLTrainer(Trainer):
     Subclasses will need to:
     - Handle environment stepping and data.
     - Create/handle models and their predictions.
-    - Implement Trainer.step (update model).
+    - Implement Trainer.step (update model) and Trainer.evaluate.
     """
 
     def __init__(self,
@@ -54,104 +54,44 @@ class RLTrainer(Trainer):
                                 context='fork')
         else:
             env = DummyVecEnv([_env(0)])
-        env = self.add_obs_norm_wrapper(env)
+        env = VecObsNormWrapper(env, norm=self.norm_observations)
         return VecEpisodeLogger(env)
 
-    def make_eval_env(self):
-        """Environment used for evaluation.
-
-        Cannot be a VecEnv.
-        """
-        eval_env = self._make_eval_env()
-        assert not is_vec_env(eval_env)
-        return self.add_obs_norm_wrapper(eval_env)
-
-    def _make_eval_env(self):
-        """Create an environment.
-
-        Overwrite in subclasses if needed.
-        """
-        return self.env_fn(rank=self.nenv + 1)
-
-    def add_obs_norm_wrapper(self, env):
-        """Wrap an env to normalize observations.
-
-        If env is different from self.env, then the normalization used by
-        self.env will be used.
-
-        Otherwise normalization parameters will be used from the latest ckpt
-        or will be computed from rollouts in the environemnt.
-        """
-        if is_vec_env(env):
-            wrapper_class = VecObsNormWrapper
-        else:
-            wrapper_class = ObsNormWrapper
-        assert find_wrapper(env, wrapper_class) is None, (
-            "Environment already has an ObsNormWrapper.")
-        is_training_env = not hasattr(self, 'env')
-        if not self.norm_observations:
-            env = wrapper_class(env, norm=False, log=is_training_env)
-        elif not is_training_env:
-            ob_wrapper = find_wrapper(self.env, VecObsNormWrapper)
-            env = wrapper_class(env,
-                                mean=ob_wrapper.mean,
-                                std=ob_wrapper.std,
-                                log=False)
-        else:
-            ckpts = self.ckptr.ckpts()
-            if ckpts:
-                # Load in normalization parameters here. This can result in
-                # loading the ckpt twice, but guarantees the correct
-                # normalization is used.
-                state_dict = self.ckptr.load(max(ckpts))
-                env = wrapper_class(env)
-                env.load_state_dict(state_dict['obs_norm'])
-            else:
-                env = wrapper_class(env)
-        return env
-
     def _save(self, state_dict):
-        ob_wrapper = find_wrapper(self.env, VecObsNormWrapper)
-        if ob_wrapper:
-            state_dict['obs_norm'] = ob_wrapper.state_dict()
+        state_dict['env'] = misc.env_state_dict(self.env)
         super()._save(state_dict)
 
     def _load(self, state_dict):
-        ob_wrapper = find_wrapper(self.env, VecObsNormWrapper)
-        if ob_wrapper:
-            ob_wrapper.load_state_dict(state_dict['obs_norm'])
-        log_wrapper = find_wrapper(self.env, VecEpisodeLogger)
-        if log_wrapper:
-            log_wrapper.t = state_dict['t']
+        misc.env_load_state_dict(self.env, state_dict['env'])
         super()._load(state_dict)
 
-    def rl_evaluate(self, eval_actor):
+    def rl_evaluate(self, eval_env, eval_actor):
         """Log episode stats."""
-        if not hasattr(self, 'eval_env'):
-            self.eval_env = self.make_eval_env()
         eval_actor.eval()
+        misc.set_env_to_eval_mode(eval_env)
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'eval',
                                self.ckptr.format.format(self.t) + '.json')
-        stats = rl_evaluate(self.eval_env, eval_actor, self.eval_num_episodes,
+        stats = rl_evaluate(eval_env, eval_actor, self.eval_num_episodes,
                             outfile, self.device)
         logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
                           self.t, time.time())
         logger.add_scalar('eval/mean_episode_length', stats['mean_length'],
                           self.t, time.time())
         eval_actor.train()
+        misc.set_env_to_train_mode(eval_env)
 
-    def rl_record(self, eval_actor):
+    def rl_record(self, eval_env, eval_actor):
         """Record videos."""
-        if not hasattr(self, 'eval_env'):
-            self.eval_env = self.make_eval_env()
         eval_actor.eval()
+        misc.set_env_to_eval_mode(eval_env)
         os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'video',
                                self.ckptr.format.format(self.t) + '.mp4')
-        rl_record(self.eval_env, eval_actor, self.record_num_episodes, outfile,
+        rl_record(eval_env, eval_actor, self.record_num_episodes, outfile,
                   self.device)
         eval_actor.train()
+        misc.set_env_to_train_mode(eval_env)
 
     def close(self):
         """Close environment."""
@@ -187,10 +127,12 @@ if __name__ == '__main__':
                     class Actor():
                         def __init__(self, env):
                             self.env = env
+                            self.nenv = self.env.num_envs
 
                         def __call__(self, ob):
                             ac = torch.from_numpy(
-                                np.array(self.env.action_space.sample()))[None]
+                                np.array([self.env.action_space.sample()
+                                          for _ in range(self.nenv)]))
                             return namedtuple('test', ['action', 'state_out'])(
                                 action=ac, state_out=None)
 
@@ -201,8 +143,8 @@ if __name__ == '__main__':
                             pass
                     actor = Actor(self.env)
 
-                    self.rl_evaluate(actor)
-                    self.rl_record(actor)
+                    self.rl_evaluate(self.env, actor)
+                    self.rl_record(self.env, actor)
 
                 def state_dict(self):
                     return {}

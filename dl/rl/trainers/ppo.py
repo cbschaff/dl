@@ -2,7 +2,8 @@
 
 https://arxiv.org/abs/1707.06347
 """
-from dl.rl.trainers import RolloutTrainer
+from dl.rl.trainers import RLTrainer
+from dl.rl.data_collection import RolloutDataManager
 from dl.rl.modules import Policy
 from dl import logger
 import gin
@@ -12,8 +13,25 @@ import torch.nn as nn
 import numpy as np
 
 
+class PPOActor(object):
+    """Actor."""
+
+    def __init__(self, pi):
+        """Init."""
+        self.pi = pi
+
+    def __call__(self, ob, state_in=None, mask=None):
+        """Produce decision from model."""
+        outs = self.pi(ob, state_in, mask)
+        data = {'action': outs.action,
+                'value': outs.value,
+                'state': outs.state_out,
+                'logp': outs.dist.log_prob(outs.action)}
+        return data
+
+
 @gin.configurable(blacklist=['logdir'])
-class PPO(RolloutTrainer):
+class PPO(RLTrainer):
     """PPO algorithm."""
 
     def __init__(self,
@@ -21,6 +39,11 @@ class PPO(RolloutTrainer):
                  env_fn,
                  policy_fn,
                  optimizer=torch.optim.Adam,
+                 rollout_length=128,
+                 batch_size=32,
+                 gamma=0.99,
+                 lambda_=0.95,
+                 norm_advantages=False,
                  epochs_per_rollout=10,
                  max_grad_norm=None,
                  ent_coef=0.01,
@@ -37,10 +60,17 @@ class PPO(RolloutTrainer):
 
         self.pi = policy_fn(self.env).to(self.device)
         self.opt = optimizer(self.pi.parameters())
-        self.init_rollout_storage(self.pi(self._ob).state_out, ['logp'])
-        self.mse = nn.MSELoss(reduction='none')
+        self.data_manager = RolloutDataManager(
+            self.env,
+            PPOActor(self.pi),
+            self.device,
+            rollout_length=rollout_length,
+            batch_size=batch_size,
+            gamma=gamma,
+            lambda_=lambda_,
+            norm_advantages=norm_advantages)
 
-        self.eval_env = self.make_eval_env()
+        self.mse = nn.MSELoss(reduction='none')
 
     def state_dict(self):
         """State dict."""
@@ -54,19 +84,14 @@ class PPO(RolloutTrainer):
         self.pi.load_state_dict(state_dict['pi'])
         self.opt.load_state_dict(state_dict['opt'])
 
-    def act(self, ob, state_in, mask):
-        """Produce decision from model."""
-        outs = self.pi(ob, state_in, mask)
-        keys = {'logp': outs.dist.log_prob(outs.action)}
-        return outs, keys
-
     def step(self):
         """Compute rollout, loss, and update model."""
         self.pi.train()
-        self.rollout()
+        self.data_manager.rollout()
+        self.t += self.data_manager.rollout_length * self.nenv
         losses = {'total': [], 'pi': [], 'value': [], 'entropy': []}
         for _ in range(self.epochs_per_rollout):
-            for batch in self.rollout_sampler():
+            for batch in self.data_manager.sampler():
                 self.opt.zero_grad()
                 loss = self.loss(batch)
                 for k, v in loss.items():
@@ -81,16 +106,16 @@ class PPO(RolloutTrainer):
 
     def evaluate(self):
         """Evaluate model."""
-        self.rl_evaluate(self.pi)
-        self.rl_record(self.pi)
+        self.rl_evaluate(self.env, self.pi)
+        self.rl_record(self.env, self.pi)
 
     def loss(self, batch):
         """Compute loss."""
-        outs = self.pi(batch['ob'], batch['state'], batch['mask'])
+        outs = self.pi(batch['obs'], batch['state'], batch['mask'])
         loss = {}
 
         # compute policy loss
-        logp = outs.dist.log_prob(batch['ac'])
+        logp = outs.dist.log_prob(batch['action'])
         assert logp.shape == batch['logp'].shape
         ratio = torch.exp(logp - batch['logp'])
         assert ratio.shape == batch['atarg'].shape

@@ -132,7 +132,8 @@ class SingleModelTrainer(DatasetTrainer):
         raise NotImplementedError
 
     def metrics(self, batch, model_out):
-        """Compute scalar metrics for a given minibatch. (i.e. accuracy)
+        """Compute scalar metrics for a given minibatch (i.e. accuracy).
+
         Args:
             batch: a minibatch from the validation dataset
             model_out: the return value of Trainer.forward

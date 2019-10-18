@@ -3,12 +3,11 @@ import os
 import json
 import tempfile
 import time
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-from baselines.common.vec_env import VecEnv, VecEnvWrapper
 import numpy as np
 from imageio import imwrite
 import subprocess as sp
 from dl import logger
+from dl.rl.util import ensure_vec_env
 import torch
 
 
@@ -37,12 +36,6 @@ class Actor(object):
         return out.action.cpu().numpy()
 
 
-def _wrap_env(env):
-    if not isinstance(env, (VecEnv, VecEnvWrapper)):
-        env = DummyVecEnv([lambda: env])
-    return env
-
-
 def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
     """Compute episode stats for an environment and actor.
 
@@ -59,7 +52,7 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
         A dict of episode stats
 
     """
-    env = _wrap_env(env)
+    env = ensure_vec_env(env)
     ep_lengths = []
     ep_rewards = []
     obs = env.reset()
@@ -114,7 +107,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         A dict of episode stats
 
     """
-    env = _wrap_env(env)
+    env = ensure_vec_env(env)
     tmpdir = os.path.join(tempfile.gettempdir(),
                           'video_' + str(time.monotonic()))
     os.makedirs(tmpdir)
@@ -145,7 +138,6 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         for i, done in enumerate(dones):
             if 'episode_info' in infos[i]:
                 if infos[i]['episode_info']['done']:
-                    print(len(ims[i]))
                     id = write_ims(ims[i], id)
                     ims[i] = []
                     episodes += 1
