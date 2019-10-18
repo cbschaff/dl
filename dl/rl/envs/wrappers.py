@@ -114,7 +114,7 @@ class VecEpsilonGreedy(VecEnvWrapper):
         """Wrap actions."""
         if np.random.rand() < self.epsilon:
             actions = [self.action_space.sample() for _ in range(self.num_envs)]
-        self.venv.step(actions)
+        return self.venv.step(actions)
 
     def step_wait(self):
         """Step."""
