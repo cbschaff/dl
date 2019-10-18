@@ -6,6 +6,34 @@ import gin
 import gym
 
 
+class StepOnEndOfLifeEnv(gym.Wrapper):
+    """Do a no-op step after loss of life in atari games.
+
+    When not using the episodic life wrapper, the environment might not
+    continue the game until the "fire" button is pressed.
+    """
+
+    def __init__(self, env):
+        """Init."""
+        gym.Wrapper.__init__(self, env)
+        self.lives = 0
+
+    def reset(self):
+        """Reset."""
+        obs = self.env.reset()
+        self.lives = self.env.unwrapped.ale.lives()
+        return obs
+
+    def step(self, action):
+        """Step."""
+        obs, reward, done, info = self.env.step(action)
+        lives = self.env.unwrapped.ale.lives()
+        if lives < self.lives and lives > 0:
+            obs, _, _, _ = self.env.step(0)
+        self.lives = lives
+        return obs, reward, done, info
+
+
 @gin.configurable(blacklist=['rank'])
 def make_atari_env(game_name, seed=0, rank=0, sticky_actions=True,
                    timelimit=True, noop=False, frameskip=4, episode_life=False,
@@ -20,6 +48,7 @@ def make_atari_env(game_name, seed=0, rank=0, sticky_actions=True,
     if noop:
         env = atari_wrappers.NoopResetEnv(env, noop_max=30)
     env = atari_wrappers.MaxAndSkipEnv(env, skip=frameskip)
+    env = StepOnEndOfLifeEnv(env)
     env = EpisodeInfo(env)
     env.seed(seed + rank)
     env = atari_wrappers.wrap_deepmind(
