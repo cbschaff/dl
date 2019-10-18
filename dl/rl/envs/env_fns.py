@@ -29,7 +29,10 @@ class StepOnEndOfLifeEnv(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         lives = self.env.unwrapped.ale.lives()
         if lives < self.lives and lives > 0:
-            obs, _, _, _ = self.env.step(0)
+            if 'FIRE' in self.env.unwrapped.get_action_meanings():
+                obs, _, _, _ = self.env.step(1)
+            else:
+                obs, _, _, _ = self.env.step(0)
         self.lives = lives
         return obs, reward, done, info
 
