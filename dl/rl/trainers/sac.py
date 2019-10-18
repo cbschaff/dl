@@ -42,15 +42,24 @@ class UnnormActionPolicy(Policy):
         """Forward."""
         outs = super().forward(*args, **kwargs)
         if self.base.action_space.__class__.__name__ == 'Box':
-            low = self.base.action_space.low
-            high = self.base.action_space.high
-            if low is not None and high is not None:
-                low = torch.from_numpy(low).to(outs.action.device)
-                high = torch.from_numpy(high).to(outs.action.device)
-                ac = low + 0.5 * (outs.action + 1) * (high - low)
+            if not hasattr(self, 'low'):
+                self._get_bounds_on_device(outs.action)
+            if self.low is not None and self.high is not None:
+                ac = self.low + 0.5 * (outs.action + 1) * (self.high - self.low)
                 outs = self.outputs(action=ac, value=outs.value, dist=outs.dist,
                                     state_out=outs.state_out)
         return outs
+
+    def _get_bounds_on_device(self, action):
+        if self.base.action_space.__class__.__name__ == 'Box':
+            low = self.base.action_space.low
+            high = self.base.action_space.high
+            if low is not None and high is not None:
+                self.low = torch.from_numpy(low).to(action.device)
+                self.high = torch.from_numpy(high).to(action.device)
+            else:
+                self.low = None
+                self.high = None
 
 
 @gin.configurable(blacklist=['logdir'])
