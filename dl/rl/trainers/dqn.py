@@ -93,12 +93,7 @@ class DQN(RLTrainer):
                                          self.env.action_space)
 
         self.buffer = ReplayBuffer(self.buffer_size, self.frame_stack)
-        self.data_manager = ReplayBufferDataManager(self.buffer,
-                                                    self.env,
-                                                    self._actor,
-                                                    self.device,
-                                                    self.learning_starts,
-                                                    self.update_period)
+        self.data_manager = None  # lazy init
 
     def state_dict(self):
         """State dict."""
@@ -148,6 +143,14 @@ class DQN(RLTrainer):
 
     def step(self):
         """Step."""
+        if self.data_manager is None:
+            self.data_manager = ReplayBufferDataManager(self.buffer,
+                                                        self.env,
+                                                        self._actor,
+                                                        self.device,
+                                                        self.learning_starts,
+                                                        self.update_period)
+
         self.t += self.data_manager.step_until_update()
         if self.t % self.target_update_period == 0:
             self.qf_targ.load_state_dict(self.qf.state_dict())
