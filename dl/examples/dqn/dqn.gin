@@ -45,7 +45,7 @@ make_atari_env.sticky_actions = False
 make_atari_env.noop = True
 make_atari_env.seed = 0
 make_atari_env.frameskip = 4
-make_atari_env.episode_life = True
+make_atari_env.episode_life = False
 make_atari_env.clip_rewards = True
 make_atari_env.frame_stack = 1
 

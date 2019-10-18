@@ -319,6 +319,7 @@ class SAC(RLTrainer):
         eval_env = VecFrameStack(self.env, self.frame_stack)
         self.rl_evaluate(eval_env, self.pi)
         self.rl_record(eval_env, self.pi)
+        self.data_manager.manual_reset()
 
     def _save(self, state_dict):
         # save buffer seperately and only once (because it can be huge)

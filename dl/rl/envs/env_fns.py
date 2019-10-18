@@ -8,7 +8,7 @@ import gym
 
 @gin.configurable(blacklist=['rank'])
 def make_atari_env(game_name, seed=0, rank=0, sticky_actions=True,
-                   timelimit=True, noop=False, frameskip=4, episode_life=True,
+                   timelimit=True, noop=False, frameskip=4, episode_life=False,
                    clip_rewards=True, frame_stack=1, scale=False):
     """Create an Atari environment."""
     id = game_name + 'NoFrameskip'
