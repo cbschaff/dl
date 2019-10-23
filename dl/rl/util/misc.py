@@ -2,6 +2,7 @@
 import numpy as np
 from baselines.common.vec_env import VecEnv, VecEnvWrapper
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from dl import nest
 
 
 def conv_out_shape(in_shape, conv):
@@ -49,8 +50,10 @@ def _get_env_ob_norm(env, steps):
         obs.append(ob)
         if done:
             obs.append(env.reset())
-    obs = np.stack(obs, axis=0)
-    return obs.mean(axis=0), obs.std(axis=0)
+    obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
+    mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
+    std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
+    return mean, std
 
 
 def _get_venv_ob_norm(env, steps):
@@ -60,8 +63,10 @@ def _get_venv_ob_norm(env, steps):
         ob, r, _, _ = env.step(
             [env.action_space.sample() for _ in range(env.num_envs)])
         obs.append(ob)
-    obs = np.concatenate(obs, axis=0)
-    return obs.mean(axis=0), obs.std(axis=0)
+    obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
+    mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
+    std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
+    return mean, std
 
 
 def get_ob_norm(env, steps):

@@ -168,7 +168,8 @@ class DQN(RLTrainer):
                                     self.eval_eps)
         self.rl_evaluate(eval_env, self.qf)
         self.rl_record(eval_env, self.qf)
-        self.data_manager.manual_reset()
+        if self.data_manager:
+            self.data_manager.manual_reset()
 
     def _save(self, state_dict):
         # save buffer seperately and only once (because it can be huge)
@@ -180,7 +181,8 @@ class DQN(RLTrainer):
         self.buffer.load_state_dict(np.load(os.path.join(self.ckptr.ckptdir,
                                                          'buffer.npz')))
         super()._load(state_dict)
-        self.data_manager.manual_reset()
+        if self.data_manager:
+            self.data_manager.manual_reset()
 
 
 if __name__ == '__main__':

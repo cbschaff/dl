@@ -103,9 +103,9 @@ class PrioritizedReplayBuffer(object):
         """Get last observation."""
         return self.buffer.encode_recent_observation()
 
-    def store_frame(self, frame):
-        """Store a frame."""
-        idx = self.buffer.store_frame(frame)
+    def store_observation(self, obs):
+        """Store an observation."""
+        idx = self.buffer.store_observation(obs)
         self._it_sum[idx] = self._max_priority ** self._alpha
         self._it_min[idx] = self._max_priority ** self._alpha
         self.num_in_buffer = self.buffer.num_in_buffer
@@ -184,14 +184,14 @@ if __name__ == '__main__':
             buffer = PrioritizedReplayBuffer(buffer, alpha=0.5)
             env = atari_env('Pong')
             init_obs = env.reset()
-            idx = buffer.store_frame(init_obs)
+            idx = buffer.store_observation(init_obs)
             assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
             for i in range(10):
                 ac = env.action_space.sample()
                 obs, r, done, _ = env.step(ac)
                 data = {'action': ac, 'reward': r, 'done': done, 'key1': 0}
                 buffer.store_effect(idx, data)
-                idx = buffer.store_frame(obs)
+                idx = buffer.store_observation(obs)
 
             # Check sample shapes
             s = buffer.sample(2, beta=1.)
@@ -237,8 +237,8 @@ if __name__ == '__main__':
                 data = {'action': ac, 'reward': r, 'done': done, 'key1': 0}
                 buffer.store_effect(idx, data)
                 buffer2.store_effect(idx, data)
-                idx = buffer.store_frame(obs)
-                idx2 = buffer2.store_frame(obs)
+                idx = buffer.store_observation(obs)
+                idx2 = buffer2.store_observation(obs)
                 assert idx == idx2
                 assert buffer._max_priority == buffer2._max_priority
 

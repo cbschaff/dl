@@ -1,7 +1,8 @@
 """Set up gin.configurables for environment creation."""
 import baselines.common.atari_wrappers as atari_wrappers
 from dl.rl.envs.logging_wrappers import EpisodeInfo
-from dl.rl.envs.wrappers import FrameStack, ImageTranspose
+from dl.rl.envs.misc_wrappers import ImageTranspose
+from dl.rl.envs.frame_stack_wrappers import FrameStack
 import gin
 import gym
 

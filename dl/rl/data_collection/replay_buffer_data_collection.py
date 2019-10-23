@@ -1,6 +1,7 @@
 """Collect data from an environment and store it in a replay buffer."""
 from dl.rl.data_collection import ReplayBuffer
 from dl.rl.util import ensure_vec_env
+from dl import nest
 import torch
 
 
@@ -46,11 +47,18 @@ class ReplayBufferDataManager(object):
         """Step env and store transition in replay buffer."""
         if self._ob is None:
             self.manual_reset()
-        idx = self.buffer.store_frame(self._ob[0])  # remove batch dimension
+
+        def _remove_batch_dim(ob):
+            return ob[0]
+
+        def _to_torch(ob):
+            return torch.from_numpy(ob).to(self.device)[None]
+
+        idx = self.buffer.store_observation(
+                        nest.map_structure(_remove_batch_dim, self._ob))
         ob = self.buffer.encode_recent_observation()
         with torch.no_grad():
-            ob = torch.from_numpy(ob).to(self.device)
-            data = self.act(ob[None])  # add batch dimension
+            data = self.act(nest.map_structure(_to_torch, ob))
             for k in data:
                 data[k] = data[k].cpu().numpy()
         self._ob, r, done, _ = self.env.step(data['action'])

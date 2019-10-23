@@ -1,7 +1,7 @@
 """Environment Wrapper for normalizing observations."""
 from baselines.common.vec_env import VecEnvWrapper
 from gym import Wrapper
-from dl import logger
+from dl import logger, nest
 from dl.rl.util import get_ob_norm
 import numpy as np
 import time
@@ -37,27 +37,36 @@ class ObsNorm(object):
         self.std = None
 
         if mean is not None and std is not None:
+            if not nest.has_same_structure(mean, std):
+                raise ValueError("mean and std must have the same structure.")
             self.mean = mean
-            self.std = np.maximum(std, self.eps)
+            self.std = nest.map_structure(
+                        lambda x: np.maximum(x, self.eps), std)
 
     def _env(self):
         return self.env if hasattr(self, 'env') else self.venv
 
     def find_norm_params(self):
         """Calculate mean and std with a random policy to collect data."""
-        self.mean, std = get_ob_norm(self._env(), self.steps)
-        self.std = np.maximum(std, self.eps)
+        mean, std = get_ob_norm(self._env(), self.steps)
+        self.mean = mean
+        self.std = nest.map_structure(lambda x: np.maximum(x, self.eps), std)
 
     def _normalize(self, obs):
         if not self.should_norm:
             return obs
         if self.mean is None or self.std is None:
             self.find_norm_params()
-        if not isinstance(obs, np.ndarray):
-            obs = np.asarray(obs)
-        if obs.dtype is not np.float32:
-            obs = obs.astype(np.float32)
-        return (obs - self.mean) / self.std
+        obs = nest.map_structure(np.asarray, obs)
+        obs = nest.map_structure(np.float32, obs)
+        if not nest.has_same_structure(self.mean, obs):
+            raise ValueError("mean and obs do not have the same structure!")
+
+        def norm(item):
+            ob, mean, std = item
+            return (ob - mean) / std
+        return nest.map_structure(norm, nest.zip_structure(obs, self.mean,
+                                                           self.std))
 
     def state_dict(self):
         """State dict."""
@@ -77,17 +86,18 @@ class ObsNorm(object):
         """Norm observations and log."""
         obs = self._normalize(obs)
         if not self._eval and self.log and self.log_prob > np.random.rand():
-            percentiles = {
-                '00': np.quantile(obs, 0.0),
-                '10': np.quantile(obs, 0.1),
-                '25': np.quantile(obs, 0.25),
-                '50': np.quantile(obs, 0.5),
-                '75': np.quantile(obs, 0.75),
-                '90': np.quantile(obs, 0.9),
-                '100': np.quantile(obs, 1.0),
-            }
-            logger.add_scalars('ob_stats/percentiles', percentiles, self.t,
-                               time.time())
+            for i, ob in enumerate(nest.flatten(obs)):
+                percentiles = {
+                    '00': np.quantile(ob, 0.0),
+                    '10': np.quantile(ob, 0.1),
+                    '25': np.quantile(ob, 0.25),
+                    '50': np.quantile(ob, 0.5),
+                    '75': np.quantile(ob, 0.75),
+                    '90': np.quantile(ob, 0.9),
+                    '100': np.quantile(ob, 1.0),
+                }
+                logger.add_scalars(f'ob_stats/{i}_percentiles', percentiles,
+                                   self.t, time.time())
         return obs
 
     def eval(self):
@@ -152,6 +162,8 @@ if __name__ == '__main__':
     import shutil
     from dl.rl.envs import make_env
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+    from gym import ObservationWrapper
+    from gym.spaces import Tuple
 
     def make_vec_env(name, nenv):
         """Make env."""
@@ -161,6 +173,19 @@ if __name__ == '__main__':
             return _thunk
         env = SubprocVecEnv([_env(i) for i in range(nenv)])
         return env
+
+    class NestedObWrapper(ObservationWrapper):
+        """Nest observations."""
+
+        def __init__(self, env):
+            """Init."""
+            super().__init__(env)
+            self.observation_space = Tuple([self.observation_space,
+                                            self.observation_space])
+
+        def observation(self, observation):
+            """Duplicate observation."""
+            return (observation, observation)
 
     class TestObNorm(unittest.TestCase):
         """Test."""
@@ -201,6 +226,41 @@ if __name__ == '__main__':
             """Test wrapper."""
             logger.configure('./.test')
             env = make_env('CartPole-v1')
+            env = ObsNormWrapper(env, log_prob=1.)
+            env.reset()
+            assert env.t == 0
+            for _ in range(100):
+                _, _, done, _ = env.step(env.action_space.sample())
+                if done:
+                    env.reset()
+            assert env.t == 100
+            state = env.state_dict()
+            assert state['t'] == env.t
+            assert np.allclose(state['mean'], env.mean)
+            assert np.allclose(state['std'], env.std)
+            state['t'] = 0
+            env.load_state_dict(state)
+            assert env.t == 0
+
+            env.eval()
+            env.reset()
+            for _ in range(3):
+                env.step(env.action_space.sample())
+            assert env.t == 0
+            env.train()
+            for _ in range(3):
+                env.step(env.action_space.sample())
+            assert env.t == 3
+            print(env.mean)
+            print(env.std)
+            shutil.rmtree('./.test')
+
+        def test_nested_observations(self):
+            """Test nested observations."""
+            logger.configure('./.test')
+            env = make_env('CartPole-v1')
+            env = NestedObWrapper(env)
+            env = NestedObWrapper(env)
             env = ObsNormWrapper(env, log_prob=1.)
             env.reset()
             assert env.t == 0

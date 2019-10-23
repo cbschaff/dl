@@ -57,30 +57,27 @@ class RolloutDataManager(object):
         state = None
         if 'state' in data:
             state = data['state']
-        other_keys = list(set(data.keys()) - set(['state', 'action', 'value']))
 
         if state is None:
             self.storage = RolloutStorage(self.rollout_length,
                                           self.nenv,
                                           device=self.device,
-                                          other_keys=other_keys)
+                                          recurrent=False)
             self.init_state = None
             self.recurrent = False
         else:
-            self.state_nest = nest.get_structure(state)
-            states = nest.flatten(state)
-            self.recurrent_keys = [f'state{i}' for i in range(len(states))]
             self.recurrent = True
-            self.storage = RolloutStorage(
-                self.rollout_length, self.nenv, device=self.device,
-                other_keys=other_keys, recurrent_state_keys=self.recurrent_keys)
-            self.init_state = []
-            for state in states:
-                self.init_state.append(torch.zeros(size=state.shape,
-                                                   device=self.device,
-                                                   dtype=state.dtype))
+            self.storage = RolloutStorage(self.rollout_length,
+                                          self.nenv,
+                                          device=self.device,
+                                          recurrent=True)
 
-        self._other_keys = other_keys
+            def _init_state(s):
+                return torch.zeros(size=s.shape, device=self.device,
+                                   dtype=s.dtype)
+
+            self.init_state = nest.map_structure(_init_state, state)
+
         self._ob = torch.from_numpy(self.env.reset()).to(self.device)
         self._mask = torch.Tensor(
             [0. for _ in range(self.nenv)]).to(self.device)
@@ -92,8 +89,7 @@ class RolloutDataManager(object):
             self.init_rollout_storage()
         with torch.no_grad():
             if self.recurrent:
-                state = nest.pack_sequence_as(self._state, self.state_nest)
-                outs = self.act(self._ob, state_in=state, mask=self._mask)
+                outs = self.act(self._ob, state_in=self._state, mask=self._mask)
             else:
                 outs = self.act(self._ob, state_in=None, mask=None)
         ob, r, done, _ = self.env.step(outs['action'].cpu().numpy())
@@ -103,17 +99,15 @@ class RolloutDataManager(object):
         data['reward'] = torch.from_numpy(r).float()
         data['mask'] = self._mask
         data['vpred'] = outs['value']
-        for key in self._other_keys:
-            data[key] = outs[key]
-        if self.recurrent:
-            for i, name in enumerate(self.recurrent_keys):
-                data[name] = self._state[i]
+        for key in outs:
+            if key != 'action':
+                data[key] = outs[key]
         self.storage.insert(data)
         self._ob = torch.from_numpy(ob).to(self.device)
         self._mask = torch.Tensor(
                 [0.0 if done_ else 1.0 for done_ in done]).to(self.device)
         if self.recurrent:
-            self._state = nest.flatten(outs['state'])
+            self._state = outs['state']
 
     def rollout(self):
         """Compute entire rollout and advantage targets."""
@@ -121,10 +115,9 @@ class RolloutDataManager(object):
             self.rollout_step()
         with torch.no_grad():
             if self.recurrent:
-                state = nest.pack_sequence_as(self._state, self.state_nest)
-                outs = self.act(self._ob, mask=self._mask, state_in=state)
+                outs = self.act(self._ob, state_in=self._state, mask=self._mask)
             else:
-                outs = self.act(self._ob, mask=None, state_in=None)
+                outs = self.act(self._ob, state_in=None, mask=None)
             self.storage.compute_targets(outs['value'],
                                          self._mask,
                                          self.gamma,
@@ -132,28 +125,9 @@ class RolloutDataManager(object):
                                          lambda_=self.lambda_,
                                          norm_advantages=self.norm_advantages)
 
-    def _recurrent_generator(self):
-        for batch in self.storage.recurrent_generator(self.batch_size):
-            state = [batch[k] for k in self.recurrent_keys]
-            new_batch = {'state': nest.pack_sequence_as(state,
-                                                        self.state_nest)}
-            for k in batch:
-                if k not in self.recurrent_keys:
-                    new_batch[k] = batch[k]
-            yield new_batch
-
-    def _feed_forward_generator(self):
-        for batch in self.storage.feed_forward_generator(self.batch_size):
-            batch['state'] = None
-            batch['mask'] = None
-            yield batch
-
     def sampler(self):
         """Create sampler to iterate over rollout data."""
-        if self.recurrent:
-            return self._recurrent_generator()
-        else:
-            return self._feed_forward_generator()
+        return self.storage.sampler(self.batch_size)
 
     def act(self, ob, state_in=None, mask=None):
         """Run the model to produce an action.
@@ -237,8 +211,9 @@ if __name__ == '__main__':
             outs = self.pi(ob, state_in, mask)
             data = {'value': outs.value,
                     'action': outs.action,
-                    'state': outs.state_out,
                     'key1': torch.zeros_like(ob)}
+            if outs.state_out:
+                data['state'] = outs.state_out
             return data
 
     class T(RLTrainer):
@@ -261,10 +236,13 @@ if __name__ == '__main__':
             for batch in self.data_manager.sampler():
                 assert 'key1' in batch
                 count += 1
-                assert 'state' in batch
                 assert 'mask' in batch
-                self.data_manager.act(batch['obs'], batch['state'],
-                                      batch['mask'])
+                if self.data_manager.recurrent:
+                    assert 'state' in batch
+                    self.data_manager.act(batch['obs'], batch['state'],
+                                          batch['mask'])
+                else:
+                    self.data_manager.act(batch['obs'])
             if self.data_manager.recurrent:
                 assert count == self.nenv // self.data_manager.batch_size
             else:

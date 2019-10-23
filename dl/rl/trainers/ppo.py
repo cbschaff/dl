@@ -25,8 +25,9 @@ class PPOActor(object):
         outs = self.pi(ob, state_in, mask)
         data = {'action': outs.action,
                 'value': outs.value,
-                'state': outs.state_out,
                 'logp': outs.dist.log_prob(outs.action)}
+        if outs.state_out:
+            data['state'] = outs.state_out
         return data
 
 
@@ -111,7 +112,10 @@ class PPO(RLTrainer):
 
     def loss(self, batch):
         """Compute loss."""
-        outs = self.pi(batch['obs'], batch['state'], batch['mask'])
+        if self.data_manager.recurrent:
+            outs = self.pi(batch['obs'], batch['state'], batch['mask'])
+        else:
+            outs = self.pi(batch['obs'])
         loss = {}
 
         # compute policy loss
