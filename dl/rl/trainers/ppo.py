@@ -90,11 +90,13 @@ class PPO(RLTrainer):
         self.pi.train()
         self.data_manager.rollout()
         self.t += self.data_manager.rollout_length * self.nenv
-        losses = {'total': [], 'pi': [], 'value': [], 'entropy': []}
+        losses = {}
         for _ in range(self.epochs_per_rollout):
             for batch in self.data_manager.sampler():
                 self.opt.zero_grad()
                 loss = self.loss(batch)
+                if losses == {}:
+                    losses = {k: [] for k in loss}
                 for k, v in loss.items():
                     losses[k].append(v.detach().cpu().numpy())
                 loss['total'].backward()
