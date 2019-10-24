@@ -91,6 +91,8 @@ if __name__ == '__main__':
     from dl.rl.modules import QFunction, DiscreteQFunctionBase
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet
+    from gym.spaces import Tuple
+    from baselines.common.vec_env import VecEnvWrapper
 
     class FeedForwardBase(DiscreteQFunctionBase):
         """Feed forward network."""
@@ -102,6 +104,8 @@ if __name__ == '__main__':
 
         def forward(self, ob):
             """Forward."""
+            if isinstance(ob, list):
+                ob = ob[0]
             return self.net(ob.float())
 
     class BufferActor(object):
@@ -114,18 +118,42 @@ if __name__ == '__main__':
         def __call__(self, ob):
             """act."""
             outs = self.pi(ob)
-            data = {'action': outs.action,
-                    'key1': torch.zeros_like(ob)}
+            data = {'action': outs.action}
+            if isinstance(ob, (list, tuple)):
+                data['key1'] = torch.zeros_like(ob[0])
+            else:
+                data['key1'] = torch.zeros_like(ob)
             return data
+
+    class NestedVecObWrapper(VecEnvWrapper):
+        """Nest observations."""
+
+        def __init__(self, venv):
+            """Init."""
+            super().__init__(venv)
+            self.observation_space = Tuple([self.observation_space,
+                                            self.observation_space])
+
+        def reset(self):
+            """Reset."""
+            ob = self.venv.reset()
+            return (ob, ob)
+
+        def step_wait(self):
+            """Step."""
+            ob, r, done, info = self.venv.step_wait()
+            return (ob, ob), r, done, info
 
     class T(RLTrainer):
         """Test trainer."""
 
-        def __init__(self, *args, base=None, **kwargs):
+        def __init__(self, *args, nested=False, base=None, **kwargs):
             """Init."""
             super().__init__(*args, **kwargs)
             self.qf = QFunction(base(self.env.observation_space,
                                      self.env.action_space))
+            if nested:
+                self.env = NestedVecObWrapper(self.env)
             self.buffer = ReplayBuffer(2000, 1)
             self.data_manager = ReplayBufferDataManager(
                     self.buffer, self.env, act_fn=BufferActor(self.qf),
@@ -135,11 +163,16 @@ if __name__ == '__main__':
             """Step."""
             self.t += self.data_manager.step_until_update()
             batch = self.buffer.sample(32)
-            self.data_manager.act(torch.from_numpy(batch['obs']))
+            self.data_manager.act(nest.map_structure(torch.from_numpy,
+                                                     batch['obs']))
             assert batch['action'].shape == batch['reward'].shape
             assert batch['action'].shape == batch['done'].shape
-            assert batch['obs'].shape == batch['next_obs'].shape
-            assert len(batch['obs'].shape) == 2
+            if isinstance(batch['obs'], list):
+                assert batch['obs'][0].shape == batch['next_obs'][0].shape
+                assert len(batch['obs'][0].shape) == 2
+            else:
+                assert batch['obs'].shape == batch['next_obs'].shape
+                assert len(batch['obs'].shape) == 2
             assert len(batch['action'].shape) == 1
 
         def state_dict(self):
@@ -160,6 +193,13 @@ if __name__ == '__main__':
         def test(self):
             """Test."""
             t = T('./test', env, base=FeedForwardBase, maxt=1000)
+            t.train()
+            assert t.buffer.num_in_buffer == 1000
+            shutil.rmtree('./test')
+
+        def test_nested_ob(self):
+            """Test."""
+            t = T('./test', env, nested=True, base=FeedForwardBase, maxt=1000)
             t.train()
             assert t.buffer.num_in_buffer == 1000
             shutil.rmtree('./test')

@@ -46,7 +46,9 @@ class RolloutDataManager(object):
 
     def init_rollout_storage(self):
         """Initialize rollout storage."""
-        self._ob = torch.from_numpy(self.env.reset()).to(self.device)
+        def _to_torch(o):
+            return torch.from_numpy(o).to(self.device)
+        self._ob = nest.map_structure(_to_torch, self.env.reset())
         data = self.act(self._ob)
         if 'action' not in data:
             raise ValueError('the key "action" must be in the dict returned '
@@ -78,7 +80,7 @@ class RolloutDataManager(object):
 
             self.init_state = nest.map_structure(_init_state, state)
 
-        self._ob = torch.from_numpy(self.env.reset()).to(self.device)
+        self._ob = nest.map_structure(_to_torch, self.env.reset())
         self._mask = torch.Tensor(
             [0. for _ in range(self.nenv)]).to(self.device)
         self._state = self.init_state
@@ -103,7 +105,11 @@ class RolloutDataManager(object):
             if key != 'action':
                 data[key] = outs[key]
         self.storage.insert(data)
-        self._ob = torch.from_numpy(ob).to(self.device)
+
+        def _to_torch(o):
+            return torch.from_numpy(o).to(self.device)
+
+        self._ob = nest.map_structure(_to_torch, ob)
         self._mask = torch.Tensor(
                 [0.0 if done_ else 1.0 for done_ in done]).to(self.device)
         if self.recurrent:
@@ -152,6 +158,8 @@ if __name__ == '__main__':
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet, Categorical, DiagGaussian
     from dl.modules import MaskedLSTM, TimeAndBatchUnflattener
+    from gym.spaces import Tuple
+    from baselines.common.vec_env import VecEnvWrapper
 
     class FeedForwardBase(ActorCriticBase):
         """Test feed forward network."""
@@ -168,6 +176,8 @@ if __name__ == '__main__':
 
         def forward(self, ob):
             """Forward."""
+            if isinstance(ob, (list, tuple)):
+                ob = ob[0]
             x = self.net(ob.float())
             return self.dist(x), self.vf(x)
 
@@ -188,6 +198,8 @@ if __name__ == '__main__':
 
         def forward(self, ob, state_in=None, mask=None):
             """Forward."""
+            if isinstance(ob, (list, tuple)):
+                ob = ob[0]
             x = self.net(ob.float())
             if state_in is None:
                 x, state_out = self.lstm(self.tbf(x))
@@ -210,20 +222,45 @@ if __name__ == '__main__':
             """act."""
             outs = self.pi(ob, state_in, mask)
             data = {'value': outs.value,
-                    'action': outs.action,
-                    'key1': torch.zeros_like(ob)}
+                    'action': outs.action}
             if outs.state_out:
                 data['state'] = outs.state_out
+            if isinstance(ob, (list, tuple)):
+                data['key1'] = torch.zeros_like(ob[0])
+            else:
+                data['key1'] = torch.zeros_like(ob)
             return data
+
+    class NestedVecObWrapper(VecEnvWrapper):
+        """Nest observations."""
+
+        def __init__(self, venv):
+            """Init."""
+            super().__init__(venv)
+            self.observation_space = Tuple([self.observation_space,
+                                            self.observation_space])
+
+        def reset(self):
+            """Reset."""
+            ob = self.venv.reset()
+            return (ob, ob)
+
+        def step_wait(self):
+            """Step."""
+            ob, r, done, info = self.venv.step_wait()
+            return (ob, ob), r, done, info
 
     class T(RLTrainer):
         """Test trainer."""
 
-        def __init__(self, *args, base=None, batch_size=32, **kwargs):
+        def __init__(self, *args, nested=False, base=None,
+                     batch_size=32, **kwargs):
             """Init."""
             super().__init__(*args, **kwargs)
             self.pi = Policy(base(self.env.observation_space,
                                   self.env.action_space))
+            if nested:
+                self.env = NestedVecObWrapper(self.env)
             self.data_manager = RolloutDataManager(self.env,
                                                    RolloutActor(self.pi),
                                                    self.device,
@@ -285,6 +322,28 @@ if __name__ == '__main__':
             shutil.rmtree('./test')
             t = T('./test', env_continuous, nenv=2, batch_size=1, base=RNNBase,
                   maxt=1000)
+            t.train()
+            shutil.rmtree('./test')
+
+        def test_feed_forward_nested_ob(self):
+            """Test feed forward network."""
+            t = T('./test', env_discrete, nested=True, nenv=2, batch_size=1,
+                  base=FeedForwardBase, maxt=1000)
+            t.train()
+            shutil.rmtree('./test')
+            t = T('./test', env_continuous, nested=True, nenv=2, batch_size=1,
+                  base=FeedForwardBase, maxt=1000)
+            t.train()
+            shutil.rmtree('./test')
+
+        def test_recurrent_nested_ob(self):
+            """Test recurrent network."""
+            t = T('./test', env_discrete, nested=True, nenv=2, batch_size=1,
+                  base=RNNBase, maxt=1000)
+            t.train()
+            shutil.rmtree('./test')
+            t = T('./test', env_continuous, nested=True, nenv=2, batch_size=1,
+                  base=RNNBase, maxt=1000)
             t.train()
             shutil.rmtree('./test')
 

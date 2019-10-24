@@ -7,6 +7,7 @@ import numpy as np
 from imageio import imwrite
 import subprocess as sp
 from dl import logger
+from dl import nest
 from dl.rl.util import ensure_vec_env
 import torch
 
@@ -22,9 +23,12 @@ class Actor(object):
 
     def __call__(self, ob, dones=None):
         """__call__."""
-        ob = torch.from_numpy(ob).to(self.device)
+        def _to_torch(o):
+            return torch.from_numpy(o).to(self.device)
+        ob = nest.map_structure(_to_torch, ob)
         if dones is None:
-            mask = torch.zeros([ob.shape[0]]).to(self.device).float()
+            batch_size = nest.flatten(ob)[0].shape[0]
+            mask = torch.zeros([batch_size]).to(self.device).float()
         else:
             mask = torch.from_numpy(1. - dones).to(self.device).float()
         if self.state is None:
