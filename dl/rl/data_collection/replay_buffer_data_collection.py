@@ -154,7 +154,7 @@ if __name__ == '__main__':
         """Env function."""
         return make_env('CartPole-v1', rank=rank)
 
-    class TestOffPolicyTrainer(unittest.TestCase):
+    class TestReplayBufferDataManager(unittest.TestCase):
         """Test case."""
 
         def test(self):
