@@ -138,7 +138,7 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
             ims = [[] for rgb in rgbs]
         for i, rgb in enumerate(rgbs):
             ims[i].append(rgb)
-        _, _, dones, infos = env.step(actor(obs, dones))
+        obs, _, dones, infos = env.step(actor(obs, dones))
         for i, done in enumerate(dones):
             if 'episode_info' in infos[i]:
                 if infos[i]['episode_info']['done']:
