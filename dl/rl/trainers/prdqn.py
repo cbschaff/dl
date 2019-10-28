@@ -29,14 +29,10 @@ class PrioritizedReplayDQN(DoubleDQN):
 
     def _get_batch(self):
         beta = self.beta_schedule.value(self.t)
-        return self.buffer.sample(self.batch_size, beta)
+        return self.data_manager.sample(self.batch_size, beta)
 
     def loss(self, batch):
         """Loss."""
-        for k in batch:
-            if k != 'idxes':
-                batch[k] = torch.from_numpy(batch[k]).to(self.device)
-
         q = self.qf(batch['obs'], batch['action']).value
 
         with torch.no_grad():

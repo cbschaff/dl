@@ -4,7 +4,6 @@ https://arxiv.org/abs/1801.01290
 """
 from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl.rl.modules import QFunction, Policy, ValueFunction
 from dl.modules import TanhNormal
 from dl import logger
 import gin
@@ -32,34 +31,6 @@ class SACActor(object):
     def __call__(self, obs):
         """Act."""
         return {'action': self.pi(obs).action}
-
-
-@gin.configurable(whitelist=['base'])
-class UnnormActionPolicy(Policy):
-    """Unnormalize the outputs of a TanhNormal distribution."""
-
-    def forward(self, *args, **kwargs):
-        """Forward."""
-        outs = super().forward(*args, **kwargs)
-        if self.base.action_space.__class__.__name__ == 'Box':
-            if not hasattr(self, 'low'):
-                self._get_bounds_on_device(outs.action)
-            if self.low is not None and self.high is not None:
-                ac = self.low + 0.5 * (outs.action + 1) * (self.high - self.low)
-                outs = self.outputs(action=ac, value=outs.value, dist=outs.dist,
-                                    state_out=outs.state_out)
-        return outs
-
-    def _get_bounds_on_device(self, action):
-        if self.base.action_space.__class__.__name__ == 'Box':
-            low = self.base.action_space.low
-            high = self.base.action_space.high
-            if low is not None and high is not None:
-                self.low = torch.from_numpy(low).to(action.device)
-                self.high = torch.from_numpy(high).to(action.device)
-            else:
-                self.low = None
-                self.high = None
 
 
 @gin.configurable(blacklist=['logdir'])
@@ -198,15 +169,8 @@ class SAC(RLTrainer):
                 self.log_alpha.copy_(state_dict['log_alpha'])
         self.opt_vf.load_state_dict(state_dict['opt_vf'])
 
-    def act(self, ob):
-        """Get decision from policy."""
-        return self.pi(ob).action
-
     def loss(self, batch):
         """Loss function."""
-        for k in batch:
-            batch[k] = torch.from_numpy(batch[k]).to(self.device)
-
         pi_out = self.pi(batch['obs'], reparameterization_trick=self.rsample)
         if self.discrete:
             new_ac = pi_out.action
@@ -301,7 +265,7 @@ class SAC(RLTrainer):
                                self.target_smoothing_coef)
 
         if self.t % self.update_period == 0:
-            batch = self.buffer.sample(self.batch_size)
+            batch = self.data_manager.sample(self.batch_size)
 
             pi_loss, qf1_loss, qf2_loss, vf_loss = self.loss(batch)
 
@@ -350,6 +314,7 @@ if __name__ == '__main__':
     import shutil
     from dl.rl.envs import make_env
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
+    from dl.rl.modules import QFunction, ValueFunction, UnnormActionPolicy
     from dl.rl.modules import ValueFunctionBase
     from dl.modules import TanhDiagGaussian
     import torch.nn.functional as F

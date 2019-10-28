@@ -84,7 +84,54 @@ class TanhNormal(D.Distribution):
     def entropy(self):
         """Entropy."""
         # TODO: implement this.
-        return torch.zeros([self.normal.mean.shape[0]])
+        return torch.zeros([self.normal.mean.shape[0]],
+                           device=self.normal.mean.device)
+
+
+class DeltaDist(D.Distribution):
+    """Delta distribution."""
+
+    def __init__(self, x):
+        """Init."""
+        self._x = x
+        self.batch_size = self.mean.shape[0]
+
+    @property
+    def mean(self):
+        """Mean."""
+        return self._x
+
+    @property
+    def stddev(self):
+        """Std."""
+        return torch.zeros_like(self._x)
+
+    @property
+    def variance(self):
+        """Variance."""
+        return torch.zeros_like(self._x)
+
+    def mode(self):
+        """Mode."""
+        return self._x
+
+    def log_prob(self, value):
+        """Log probability."""
+        zeros = torch.zeros([self.batch_size], device=self._x.device)
+        if torch.allclose(self._x, value):
+            return zeros
+        else:
+            return torch.log(zeros)
+
+    def sample(self, sample_shape=torch.Size()):
+        """Sample."""
+        with torch.no_grad():
+            return self.rsample(sample_shape)
+
+    def rsample(self, sample_shape=torch.Size()):
+        """Reprameterized sample."""
+        shape = sample_shape + torch.Size([1 for _ in self._x.shape])
+        return self._x.repeat(shape)
 
 
 """
@@ -123,6 +170,50 @@ class Categorical(nn.Module):
         """
         x = self.linear(x)
         return CatDist(logits=x)
+
+
+class Delta(nn.Module):
+    """Delta distribution."""
+
+    def __init__(self, nin, nout):
+        """Init.
+
+        Args:
+            nin  (int): dimensionality of the input
+            nout (int): number of categories
+
+        """
+        super().__init__()
+
+        self.linear = nn.Linear(nin, nout)
+        nn.init.orthogonal_(self.linear.weight.data, gain=0.01)
+        nn.init.constant_(self.linear.bias.data, 0)
+
+    def forward(self, x):
+        """Forward.
+
+        Args:
+            x (torch.Tensor): vectors of length nin
+        Returns:
+            dist (torch.distributions.Categorical): Categorical distribution
+
+        """
+        return DeltaDist(self.linear(x))
+
+
+class TanhDelta(Delta):
+    """Same as Delta, but the input to DeltaDist is passed through a tanh."""
+
+    def forward(self, x):
+        """Forward.
+
+        Args:
+            x (torch.Tensor): vectors of length nin
+        Returns:
+            dist (torch.distributions.Categorical): Categorical distribution
+
+        """
+        return DeltaDist(torch.tanh(self.linear(x)))
 
 
 @gin.configurable
@@ -231,6 +322,26 @@ if __name__ == '__main__':
             assert dist.mode().shape == (2,)
             assert dist.log_prob(ac).shape == (2,)
             assert dist.entropy().shape == (2,)
+
+        def test_delta(self):
+            """Test delta."""
+            d = Delta(10, 2)
+            dtanh = TanhDelta(10, 2)
+            dtanh.load_state_dict(d.state_dict())
+            features = torch.ones(2, 10)
+            dist = d(features)
+            ac = dist.sample()
+            assert not ac.requires_grad
+            assert ac.shape == (2, 2)
+            assert torch.all(dist.mode()[0] == dist.mode()[1])
+            assert dist.mode().shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+
+            assert torch.allclose(dist.log_prob(ac), torch.Tensor([0.]))
+            assert torch.allclose(dist.log_prob(ac + 1),
+                                  torch.Tensor([float('-inf')]))
+            actanh = dtanh(features).mode()
+            assert torch.allclose(torch.tanh(ac), actanh)
 
         def test_normal(self):
             """Test normal."""

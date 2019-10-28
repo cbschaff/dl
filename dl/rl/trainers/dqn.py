@@ -118,13 +118,10 @@ class DQN(RLTrainer):
         return rew + (1.0 - done) * self.gamma * qtarg
 
     def _get_batch(self):
-        return self.buffer.sample(self.batch_size)
+        return self.data_manager.sample(self.batch_size)
 
     def loss(self, batch):
         """Compute loss."""
-        for k in batch:
-            batch[k] = torch.from_numpy(batch[k]).to(self.device)
-
         q = self.qf(batch['obs'], batch['action']).value
 
         with torch.no_grad():

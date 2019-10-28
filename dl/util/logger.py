@@ -1,9 +1,6 @@
 """Global Tensorboard writer."""
 from torch.utils.tensorboard import SummaryWriter
-import torch
-import os
 import time
-import json
 
 
 def log(out):

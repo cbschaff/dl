@@ -3,6 +3,7 @@ from dl.rl.data_collection import ReplayBuffer
 from dl.rl.util import ensure_vec_env
 from dl import nest
 import torch
+import numpy as np
 
 
 class ReplayBufferDataManager(object):
@@ -83,6 +84,17 @@ class ReplayBufferDataManager(object):
             t += 1
         return t
 
+    def sample(self, *args, **kwargs):
+        """Sample batch from replay buffer."""
+        batch = self.buffer.sample(*args, **kwargs)
+
+        def _to_torch(data):
+            if isinstance(data, np.ndarray):
+                return torch.from_numpy(data).to(self.device)
+            else:
+                return data
+        return nest.map_structure(_to_torch, batch)
+
 
 if __name__ == '__main__':
     import unittest
@@ -162,9 +174,8 @@ if __name__ == '__main__':
         def step(self):
             """Step."""
             self.t += self.data_manager.step_until_update()
-            batch = self.buffer.sample(32)
-            self.data_manager.act(nest.map_structure(torch.from_numpy,
-                                                     batch['obs']))
+            batch = self.data_manager.sample(32)
+            self.data_manager.act(batch['obs'])
             assert batch['action'].shape == batch['reward'].shape
             assert batch['action'].shape == batch['done'].shape
             if isinstance(batch['obs'], list):
