@@ -33,7 +33,9 @@ class OrnsteinUhlenbeck(object):
         self.sigma = sigma
         self.x = torch.zeros(shape, device=device, dtype=torch.float32,
                              requires_grad=False)
-        self.dist = torch.distributions.Normal(0., sigma)
+        self.dist = torch.distributions.Normal(
+                torch.zeros(shape, device=device, dtype=torch.float32),
+                sigma * torch.ones(shape, device=device, dtype=torch.float32))
 
     def __call__(self):
         """Sample."""
@@ -61,10 +63,12 @@ class DDPGActor(object):
                                                                 action.device)
                 self.high = torch.from_numpy(self.action_space.high).to(
                                                                 action.device)
-            normed_action = (action - self.low) / (self.high - self.low)
+            normed_action = (2. * (action - self.low) / (self.high - self.low)
+                             - 1.)
             noisy_normed_action = normed_action + self.noise()
-            noisy_action = noisy_normed_action * (
-                                            (self.high - self.low) + self.low)
+            noisy_action = ((noisy_normed_action + 1.0) / 2.0
+                            * (self.high - self.low)
+                            + self.low)
             clipped_action = torch.max(torch.min(noisy_action,
                                                  self.high),
                                        self.low)
