@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from dl.rl.envs import VecFrameStack
+from baselines.common.schedules import LinearSchedule
 
 
 def soft_target_update(target_net, net, tau):
@@ -27,7 +28,7 @@ class OrnsteinUhlenbeck(object):
     Default parameters are chosen from the DDPg paper.
     """
 
-    def __init__(self, shape, device, theta=0.15, sigma=0.2):
+    def __init__(self, shape, device, theta, sigma):
         """Init."""
         self.theta = theta
         self.sigma = sigma
@@ -35,30 +36,34 @@ class OrnsteinUhlenbeck(object):
                              requires_grad=False)
         self.dist = torch.distributions.Normal(
                 torch.zeros(shape, device=device, dtype=torch.float32),
-                sigma * torch.ones(shape, device=device, dtype=torch.float32))
+                torch.ones(shape, device=device, dtype=torch.float32))
 
     def __call__(self):
         """Sample."""
         with torch.no_grad():
-            self.x = (1. - self.theta) * self.x + self.dist.sample()
+            self.x = ((1. - self.theta) * self.x
+                      + self.sigma * self.dist.sample())
         return self.x
 
 
 class DDPGActor(object):
     """DDPG actor."""
 
-    def __init__(self, pi, action_space):
+    def __init__(self, pi, action_space, theta=0.15, sigma=0.2):
         """Init."""
         self.pi = pi
         self.noise = None
         self.action_space = action_space
+        self.theta = theta
+        self.sigma = sigma
 
     def __call__(self, obs):
         """Act."""
         with torch.no_grad():
             action = self.pi(obs, deterministic=True).action
             if self.noise is None:
-                self.noise = OrnsteinUhlenbeck(action.shape, action.device)
+                self.noise = OrnsteinUhlenbeck(action.shape, action.device,
+                                               self.theta, self.sigma)
                 self.low = torch.from_numpy(self.action_space.low).to(
                                                                 action.device)
                 self.high = torch.from_numpy(self.action_space.high).to(
@@ -73,6 +78,12 @@ class DDPGActor(object):
                                                  self.high),
                                        self.low)
             return {'action': clipped_action}
+
+    def update_sigma(self, sigma):
+        """Update noise standard deviation."""
+        self.sigma = sigma
+        if self.noise:
+            self.noise.sigma = sigma
 
 
 @gin.configurable(blacklist=['logdir'])
@@ -93,6 +104,10 @@ class DDPG(RLTrainer):
                  policy_lr=1e-3,
                  qf_lr=1e-3,
                  gamma=0.99,
+                 noise_theta=0.15,
+                 noise_sigma=0.2,
+                 noise_sigma_final=0.01,
+                 noise_decay_period=10000,
                  target_update_period=1,
                  target_smoothing_coef=0.005,
                  reward_scale=1,
@@ -132,12 +147,14 @@ class DDPG(RLTrainer):
         self.target_pi.load_state_dict(self.pi.state_dict())
         self.target_qf.load_state_dict(self.qf.state_dict())
 
+        self.noise_schedule = LinearSchedule(noise_decay_period,
+                                             noise_sigma_final, noise_sigma)
+        self._actor = DDPGActor(self.pi, self.env.action_space, noise_theta,
+                                self.noise_schedule.value(self.t))
         self.buffer = ReplayBuffer(buffer_size, frame_stack)
         self.data_manager = ReplayBufferDataManager(self.buffer,
                                                     self.env,
-                                                    DDPGActor(
-                                                        self.pi,
-                                                        self.env.action_space),
+                                                    self._actor,
                                                     self.device,
                                                     self.learning_starts,
                                                     self.update_period)
@@ -202,6 +219,7 @@ class DDPG(RLTrainer):
 
     def step(self):
         """Step optimization."""
+        self._actor.update_sigma(self.noise_schedule.value(self.t))
         self.t += self.data_manager.step_until_update()
         if self.t % self.target_update_period == 0:
             soft_target_update(self.target_pi, self.pi,
