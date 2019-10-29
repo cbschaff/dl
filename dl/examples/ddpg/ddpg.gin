@@ -4,7 +4,6 @@ import dl.examples.ddpg
 train.Trainer = @DDPG
 
 optim.Adam.betas = (0.9, 0.999)
-optim.Adam.weight_decay = 1e-2
 
 DDPG.maxt = 100000
 DDPG.seed = 0
