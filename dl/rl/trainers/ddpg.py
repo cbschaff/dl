@@ -101,8 +101,9 @@ class DDPG(RLTrainer):
                  learning_starts=1000,
                  update_period=1,
                  batch_size=256,
-                 policy_lr=1e-3,
+                 policy_lr=1e-4,
                  qf_lr=1e-3,
+                 qf_weight_decay=0.01,
                  gamma=0.99,
                  noise_theta=0.15,
                  noise_sigma=0.2,
@@ -142,7 +143,8 @@ class DDPG(RLTrainer):
         self.target_qf.to(self.device)
 
         self.opt_pi = optimizer(self.pi.parameters(), lr=policy_lr)
-        self.opt_qf = optimizer(self.qf.parameters(), lr=qf_lr)
+        self.opt_qf = optimizer(self.qf.parameters(), lr=qf_lr,
+                                weight_decay=qf_weight_decay)
 
         self.target_pi.load_state_dict(self.pi.state_dict())
         self.target_qf.load_state_dict(self.qf.state_dict())
