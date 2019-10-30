@@ -5,11 +5,11 @@ train.Trainer = @DDPG
 
 optim.Adam.betas = (0.9, 0.999)
 
-DDPG.maxt = 100000
+DDPG.maxt = 1000000
 DDPG.seed = 0
 DDPG.eval = True
-DDPG.eval_period = 10000
-DDPG.save_period = 10000
+DDPG.eval_period = 100000
+DDPG.save_period = 100000
 DDPG.maxseconds = None
 DDPG.gpu = True
 
@@ -21,9 +21,9 @@ DDPG.norm_observations = True
 DDPG.eval_num_episodes = 20
 DDPG.record_num_episodes = 5
 
-DDPG.buffer_size = 10000
+DDPG.buffer_size = 100000
 DDPG.frame_stack = 1
-DDPG.learning_starts = 5000
+DDPG.learning_starts = 50000
 DDPG.update_period = 1
 
 DDPG.env_fn = @make_env
@@ -36,7 +36,7 @@ DDPG.gamma = 0.99
 DDPG.noise_theta = 0.15
 DDPG.noise_sigma = 0.2
 DDPG.noise_sigma_final = 0.01
-DDPG.noise_decay_period = 10000
+DDPG.noise_decay_period = 100000
 DDPG.target_update_period = 1
 DDPG.target_smoothing_coef = 0.001
 DDPG.reward_scale = 1
