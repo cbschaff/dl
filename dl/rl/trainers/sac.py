@@ -5,7 +5,7 @@ https://arxiv.org/abs/1801.01290
 from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.modules import TanhNormal
-from dl import logger
+from dl import logger, nest
 import gin
 import os
 import time
@@ -297,13 +297,18 @@ class SAC(RLTrainer):
 
     def _save(self, state_dict):
         # save buffer seperately and only once (because it can be huge)
+        buffer_dict = self.buffer.state_dict()
         np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
-                 **self.buffer.state_dict())
+                 *nest.flatten(buffer_dict))
         super()._save(state_dict)
 
     def _load(self, state_dict):
-        self.buffer.load_state_dict(np.load(os.path.join(self.ckptr.ckptdir,
-                                                         'buffer.npz')))
+        buffer_dict = self.buffer.state_dict()
+        buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
+                                                 'buffer.npz')))
+        buffer_state = nest.flatten(buffer_state)
+        self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
+                                                          buffer_dict))
         super()._load(state_dict)
         if self.data_manager:
             self.data_manager.manual_reset()
@@ -407,6 +412,7 @@ if __name__ == '__main__':
                       eval_period=1000,
                       reparameterization_trick=True)
             sac.train()
+            sac.load()
             shutil.rmtree('logs')
 
     unittest.main()

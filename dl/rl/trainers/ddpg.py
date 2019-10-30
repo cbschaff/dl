@@ -5,7 +5,7 @@ https://arxiv.org/abs/1509.02971
 from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.rl.modules import QFunction
-from dl import logger
+from dl import logger, nest
 import gin
 import os
 import time
@@ -61,23 +61,24 @@ class DDPGActor(object):
         """Act."""
         with torch.no_grad():
             action = self.pi(obs, deterministic=True).action
-            if self.noise is None:
-                self.noise = OrnsteinUhlenbeck(action.shape, action.device,
-                                               self.theta, self.sigma)
-                self.low = torch.from_numpy(self.action_space.low).to(
-                                                                action.device)
-                self.high = torch.from_numpy(self.action_space.high).to(
-                                                                action.device)
-            normed_action = (2. * (action - self.low) / (self.high - self.low)
-                             - 1.)
-            noisy_normed_action = normed_action + self.noise()
-            noisy_action = ((noisy_normed_action + 1.0) / 2.0
-                            * (self.high - self.low)
-                            + self.low)
-            clipped_action = torch.max(torch.min(noisy_action,
-                                                 self.high),
-                                       self.low)
-            return {'action': clipped_action}
+            return {'action': self.add_noise_to_action(action)}
+
+    def add_noise_to_action(self, action):
+        """Add exploration noise."""
+        if self.noise is None:
+            self.noise = OrnsteinUhlenbeck(action.shape, action.device,
+                                           self.theta, self.sigma)
+            self.low = torch.from_numpy(self.action_space.low).to(
+                                                            action.device)
+            self.high = torch.from_numpy(self.action_space.high).to(
+                                                            action.device)
+        normed_action = (2. * (action - self.low) / (self.high - self.low)
+                         - 1.)
+        noisy_normed_action = normed_action + self.noise()
+        noisy_action = ((noisy_normed_action + 1.0) / 2.0
+                        * (self.high - self.low)
+                        + self.low)
+        return torch.max(torch.min(noisy_action, self.high), self.low)
 
     def update_sigma(self, sigma):
         """Update noise standard deviation."""
@@ -253,13 +254,18 @@ class DDPG(RLTrainer):
 
     def _save(self, state_dict):
         # save buffer seperately and only once (because it can be huge)
+        buffer_dict = self.buffer.state_dict()
         np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
-                 **self.buffer.state_dict())
+                 *nest.flatten(buffer_dict))
         super()._save(state_dict)
 
     def _load(self, state_dict):
-        self.buffer.load_state_dict(np.load(os.path.join(self.ckptr.ckptdir,
-                                                         'buffer.npz')))
+        buffer_dict = self.buffer.state_dict()
+        buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
+                                                 'buffer.npz')))
+        buffer_state = nest.flatten(buffer_state)
+        self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
+                                                          buffer_dict))
         super()._load(state_dict)
         if self.data_manager:
             self.data_manager.manual_reset()
@@ -339,6 +345,7 @@ if __name__ == '__main__':
                         eval=False,
                         eval_period=1000)
             ddpg.train()
+            ddpg.load()
             shutil.rmtree('logs')
 
     unittest.main()
