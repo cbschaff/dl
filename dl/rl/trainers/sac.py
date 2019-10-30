@@ -303,6 +303,8 @@ class SAC(RLTrainer):
         super()._save(state_dict)
 
     def _load(self, state_dict):
+        # initialize data format of buffer if needed.
+        self.data_manager.env_step_and_store_transition()
         buffer_dict = self.buffer.state_dict()
         buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
                                                  'buffer.npz')))
