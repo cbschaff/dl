@@ -132,6 +132,8 @@ class DDPG(RLTrainer):
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
 
+        self.policy_fn = policy_fn
+        self.qf_fn = qf_fn
         eval_env = VecFrameStack(self.env, self.frame_stack)
         self.pi = policy_fn(eval_env)
         self.qf = qf_fn(eval_env)
@@ -143,6 +145,10 @@ class DDPG(RLTrainer):
         self.target_pi.to(self.device)
         self.target_qf.to(self.device)
 
+        self.optimizer = optimizer
+        self.policy_lr = policy_lr
+        self.qf_lr = qf_lr
+        self.qf_weight_decay = qf_weight_decay
         self.opt_pi = optimizer(self.pi.parameters(), lr=policy_lr)
         self.opt_qf = optimizer(self.qf.parameters(), lr=qf_lr,
                                 weight_decay=qf_weight_decay)
