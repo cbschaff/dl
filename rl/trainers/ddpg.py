@@ -216,7 +216,7 @@ class DDPG(RLTrainer):
         qf_loss = self.qf_criterion(q, qtarg)
 
         # compute policy loss
-        action = self.pi(batch['obs']).normed_action
+        action = self.pi(batch['obs'], deterministic=True).normed_action
         q = self.qf(batch['obs'], action).value
         pi_loss = -q.mean()
 

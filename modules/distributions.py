@@ -125,7 +125,8 @@ class DeltaDist(D.Distribution):
 
     def sample(self, sample_shape=torch.Size()):
         """Sample."""
-        return self.rsample(sample_shape)
+        with torch.no_grad():
+            return self.rsample(sample_shape)
 
     def rsample(self, sample_shape=torch.Size()):
         """Reprameterized sample."""
