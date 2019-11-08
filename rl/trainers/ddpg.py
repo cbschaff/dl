@@ -206,7 +206,7 @@ class DDPG(RLTrainer):
         """Loss function."""
         # compute QFunction loss.
         with torch.no_grad():
-            target_action = self.target_pi(batch['next_obs']).dist.mode()
+            target_action = self.target_pi(batch['next_obs']).normed_action
             target_q = self.target_qf(batch['next_obs'], target_action).value
             qtarg = self.reward_scale * batch['reward'] + (
                     (1.0 - batch['done']) * self.gamma * target_q)
@@ -216,7 +216,7 @@ class DDPG(RLTrainer):
         qf_loss = self.qf_criterion(q, qtarg)
 
         # compute policy loss
-        action = self.pi(batch['obs']).dist.mode()
+        action = self.pi(batch['obs']).normed_action
         q = self.qf(batch['obs'], action).value
         pi_loss = -q.mean()
 
