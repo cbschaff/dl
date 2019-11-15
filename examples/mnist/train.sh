@@ -1,1 +1,1 @@
-python -m dl.train logs ./mnist.gin
+python -m dl.main logs ./mnist.gin
