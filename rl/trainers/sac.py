@@ -2,10 +2,9 @@
 
 https://arxiv.org/abs/1801.01290
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.modules import TanhNormal
-from dl import logger, nest
+from dl import logger, nest, Algorithm
 import gin
 import os
 import time
@@ -34,7 +33,7 @@ class SACActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class SAC(RLTrainer):
+class SAC(Algorithm):
     """SAC algorithm."""
 
     def __init__(self,

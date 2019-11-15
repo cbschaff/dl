@@ -116,7 +116,7 @@ class MNISTTrainer(object):
         state_dict = {}
         state_dict['model'] = self.model.state_dict()
         state_dict['opt'] = self.opt.state_dict()
-        state_dict['sampler'] = self.sampler.state_dict()
+        state_dict['sampler'] = self.sampler.state_dict(self._diter)
         state_dict['t'] = self.t
         state_dict['epochs'] = self.epochs
         self.ckptr.save(state_dict, self.t)

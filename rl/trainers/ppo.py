@@ -2,11 +2,13 @@
 
 https://arxiv.org/abs/1707.06347
 """
-from dl.rl.trainers import RLTrainer
+from dl.rl.envs import VecEpisodeLogger
 from dl.rl.data_collection import RolloutDataManager
 from dl.rl.modules import Policy
-from dl import logger
+from dl.rl.util import rl_evaluate, rl_record, misc
+from dl import logger, Algorithm, Checkpointer
 import gin
+import os
 import time
 import torch
 import torch.nn as nn
@@ -32,13 +34,14 @@ class PPOActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class PPO(RLTrainer):
+class PPO(Algorithm):
     """PPO algorithm."""
 
     def __init__(self,
                  logdir,
                  env_fn,
                  policy_fn,
+                 nenv=1,
                  optimizer=torch.optim.Adam,
                  rollout_length=128,
                  batch_size=32,
@@ -50,14 +53,26 @@ class PPO(RLTrainer):
                  ent_coef=0.01,
                  vf_coef=0.5,
                  clip_param=0.2,
+                 eval_num_episodes=1,
+                 record_num_episodes=1,
+                 gpu=True,
                  **kwargs):
         """Init."""
-        super().__init__(logdir, env_fn, **kwargs)
+        self.logdir = logdir
+        self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))
+        self.env_fn = env_fn
+        self.nenv = nenv
+        self.eval_num_episodes = eval_num_episodes
+        self.record_num_episodes = record_num_episodes
         self.epochs_per_rollout = epochs_per_rollout
         self.max_grad_norm = max_grad_norm
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.clip_param = clip_param
+        self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
+                                   else 'cpu')
+
+        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
 
         self.pi = policy_fn(self.env).to(self.device)
         self.opt = optimizer(self.pi.parameters())
@@ -73,44 +88,7 @@ class PPO(RLTrainer):
 
         self.mse = nn.MSELoss(reduction='none')
 
-    def state_dict(self):
-        """State dict."""
-        return {
-            'pi': self.pi.state_dict(),
-            'opt': self.opt.state_dict(),
-        }
-
-    def load_state_dict(self, state_dict):
-        """Load state dict."""
-        self.pi.load_state_dict(state_dict['pi'])
-        self.opt.load_state_dict(state_dict['opt'])
-
-    def step(self):
-        """Compute rollout, loss, and update model."""
-        self.pi.train()
-        self.data_manager.rollout()
-        self.t += self.data_manager.rollout_length * self.nenv
-        losses = {}
-        for _ in range(self.epochs_per_rollout):
-            for batch in self.data_manager.sampler():
-                self.opt.zero_grad()
-                loss = self.loss(batch)
-                if losses == {}:
-                    losses = {k: [] for k in loss}
-                for k, v in loss.items():
-                    losses[k].append(v.detach().cpu().numpy())
-                loss['total'].backward()
-                if self.max_grad_norm:
-                    nn.utils.clip_grad_norm_(self.pi.parameters(),
-                                             self.max_grad_norm)
-                self.opt.step()
-        for k, v in losses.items():
-            logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
-
-    def evaluate(self):
-        """Evaluate model."""
-        self.rl_evaluate(self.env, self.pi)
-        self.rl_record(self.env, self.pi)
+        self.t = 0
 
     def loss(self, batch):
         """Compute loss."""
@@ -148,16 +126,96 @@ class PPO(RLTrainer):
         loss['total'] = tot_loss
         return loss
 
+    def step(self):
+        """Compute rollout, loss, and update model."""
+        self.pi.train()
+        self.data_manager.rollout()
+        self.t += self.data_manager.rollout_length * self.nenv
+        losses = {}
+        for _ in range(self.epochs_per_rollout):
+            for batch in self.data_manager.sampler():
+                self.opt.zero_grad()
+                loss = self.loss(batch)
+                if losses == {}:
+                    losses = {k: [] for k in loss}
+                for k, v in loss.items():
+                    losses[k].append(v.detach().cpu().numpy())
+                loss['total'].backward()
+                if self.max_grad_norm:
+                    nn.utils.clip_grad_norm_(self.pi.parameters(),
+                                             self.max_grad_norm)
+                self.opt.step()
+        for k, v in losses.items():
+            logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
+        return self.t
+
+    def evaluate(self):
+        """Evaluate model."""
+        self.pi.eval()
+        misc.set_env_to_eval_mode(self.env)
+
+        # Eval policy
+        os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'eval',
+                               self.ckptr.format.format(self.t) + '.json')
+        stats = rl_evaluate(self.env, self.pi, self.eval_num_episodes,
+                            outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
+                          self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'],
+                          self.t, time.time())
+
+        # Record policy
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video',
+                               self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(self.env, self.pi, self.record_num_episodes, outfile,
+                  self.device)
+
+        self.pi.train()
+        misc.set_env_to_train_mode(self.env)
+
+    def save(self):
+        """State dict."""
+        state_dict = {
+            'pi': self.pi.state_dict(),
+            'opt': self.opt.state_dict(),
+            'env': misc.env_state_dict(self.env),
+            't': self.t
+        }
+        self.ckptr.save(state_dict, self.t)
+
+    def load(self, t=None):
+        """Load state dict."""
+        state_dict = self.ckptr.load(t)
+        if state_dict is None:
+            self.t = 0
+            return self.t
+        self.pi.load_state_dict(state_dict['pi'])
+        self.opt.load_state_dict(state_dict['opt'])
+        misc.env_load_state_dict(self.env, state_dict['env'])
+        self.t = state_dict['t']
+        return self.t
+
+    def close(self):
+        """Close environment."""
+        try:
+            self.env.close()
+        except Exception:
+            pass
+
 
 if __name__ == '__main__':
 
     import unittest
     import shutil
+    from dl import train
     from dl.rl.envs import make_atari_env
     from dl.rl.modules import ActorCriticBase
     from dl.rl.util import conv_out_shape
     from dl.modules import Categorical
     import torch.nn.functional as F
+    from functools import partial
 
     class NatureDQN(ActorCriticBase):
         """Deep network from https://www.nature.com/articles/nature14236."""
@@ -189,20 +247,15 @@ if __name__ == '__main__':
 
         def test_feed_forward_ppo(self):
             """Test feed forward ppo."""
-            def env_fn(rank):
-                return make_atari_env('Pong', rank=rank, frame_stack=4)
+            def env_fn(nenv):
+                return make_atari_env('Pong', nenv, frame_stack=4)
 
             def policy_fn(env):
                 return Policy(NatureDQN(env.observation_space,
                                         env.action_space))
 
-            ppo = PPO('test',
-                      env_fn,
-                      policy_fn,
-                      maxt=1000,
-                      eval=True,
-                      eval_period=1000)
-            ppo.train()
+            ppo = partial(PPO, env_fn=env_fn, policy_fn=policy_fn)
+            train('test', ppo, maxt=1000, eval=True, eval_period=1000)
             shutil.rmtree('test')
 
     unittest.main()

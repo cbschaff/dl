@@ -2,7 +2,10 @@
 import baselines.common.atari_wrappers as atari_wrappers
 from dl.rl.envs.logging_wrappers import EpisodeInfo
 from dl.rl.envs.misc_wrappers import ImageTranspose
-from dl.rl.envs.frame_stack_wrappers import FrameStack
+from dl.rl.envs import VecFrameStack
+from dl.rl.envs import VecEpisodeLogger, VecObsNormWrapper
+from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 import gin
 import gym
 
@@ -38,38 +41,61 @@ class StepOnEndOfLifeEnv(gym.Wrapper):
         return obs, reward, done, info
 
 
-@gin.configurable(blacklist=['rank'])
-def make_atari_env(game_name, seed=0, rank=0, sticky_actions=True,
+@gin.configurable(blacklist=['nenv'])
+def make_atari_env(game_name, nenv=1, seed=0, sticky_actions=True,
                    timelimit=True, noop=False, frameskip=4, episode_life=False,
                    clip_rewards=True, frame_stack=1, scale=False):
     """Create an Atari environment."""
     id = game_name + 'NoFrameskip'
     id += '-v0' if sticky_actions else '-v4'
-    env = gym.make(id)
-    if not timelimit:
-        env = env.env
-    assert 'NoFrameskip' in env.spec.id
-    if noop:
-        env = atari_wrappers.NoopResetEnv(env, noop_max=30)
-    env = atari_wrappers.MaxAndSkipEnv(env, skip=frameskip)
-    env = StepOnEndOfLifeEnv(env)
-    env = EpisodeInfo(env)
-    env.seed(seed + rank)
-    env = atari_wrappers.wrap_deepmind(
-        env, episode_life=episode_life, clip_rewards=clip_rewards,
-        frame_stack=False, scale=scale)  # call frame stack after transpose
-    env = ImageTranspose(env)
+
+    def _env(rank):
+        def _thunk():
+            env = gym.make(id)
+            if not timelimit:
+                env = env.env
+            assert 'NoFrameskip' in env.spec.id
+            if noop:
+                env = atari_wrappers.NoopResetEnv(env, noop_max=30)
+            env = atari_wrappers.MaxAndSkipEnv(env, skip=frameskip)
+            env = StepOnEndOfLifeEnv(env)
+            env = EpisodeInfo(env)
+            env.seed(seed + rank)
+            env = atari_wrappers.wrap_deepmind(
+                env, episode_life=episode_life, clip_rewards=clip_rewards,
+                frame_stack=False, scale=scale)
+            env = ImageTranspose(env)
+            return env
+        return _thunk
+
+    if nenv > 1:
+        env = SubprocVecEnv([_env(i) for i in range(nenv)], context='fork')
+    else:
+        env = DummyVecEnv([_env(0)])
+
     if frame_stack > 1:
-        env = FrameStack(env, frame_stack)
+        env = VecFrameStack(env, frame_stack)
     return env
 
 
-@gin.configurable(blacklist=['rank'])
-def make_env(env_id, seed=0, rank=0):
+@gin.configurable(blacklist=['nenv'])
+def make_env(env_id, nenv=1, seed=0, norm_observations=False):
     """Create an environment."""
-    env = gym.make(env_id)
-    env = EpisodeInfo(env)
-    env.seed(seed + rank)
+    def _env(rank):
+        def _thunk():
+            env = gym.make(env_id)
+            env = EpisodeInfo(env)
+            env.seed(seed + rank)
+            return env
+        return _thunk
+
+    if nenv > 1:
+        env = SubprocVecEnv([_env(i) for i in range(nenv)], context='fork')
+    else:
+        env = DummyVecEnv([_env(0)])
+
+    if norm_observations:
+        env = VecObsNormWrapper(env)
     return env
 
 
@@ -81,30 +107,30 @@ if __name__ == '__main__':
 
         def test_atari(self):
             """Test atari fn."""
-            env = make_atari_env('Pong', 0, 0, sticky_actions=True)
+            env = make_atari_env('Pong', 1, 0, sticky_actions=True)
             assert env.spec.id == 'PongNoFrameskip-v0'
             assert env.observation_space.shape == (1, 84, 84)
-            assert env.reset().shape == (1, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3]
+            assert env.reset().shape == (1, 1, 84, 84)
+            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
             env.close()
-            env = make_atari_env('Breakout', 0, 0, sticky_actions=False)
+            env = make_atari_env('Breakout', 1, 0, sticky_actions=False)
             assert env.spec.id == 'BreakoutNoFrameskip-v4'
             assert env.observation_space.shape == (1, 84, 84)
-            assert env.reset().shape == (1, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3]
+            assert env.reset().shape == (1, 1, 84, 84)
+            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
             env.close()
-            env = make_atari_env('Breakout', 0, 0, sticky_actions=False,
+            env = make_atari_env('Breakout', 1, 0, sticky_actions=False,
                                  frame_stack=4)
             assert env.spec.id == 'BreakoutNoFrameskip-v4'
             assert env.observation_space.shape == (4, 84, 84)
-            assert env.reset().shape == (4, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3]
+            assert env.reset().shape == (1, 4, 84, 84)
+            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
             env.close()
 
         def test_env(self):
             """Test env fn."""
-            env = make_env('CartPole-v1')
+            env = make_env('CartPole-v1', 1)
             env.reset()
-            assert 'episode_info' in env.step(env.action_space.sample())[3]
+            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
 
     unittest.main()

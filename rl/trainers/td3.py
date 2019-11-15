@@ -7,9 +7,8 @@ This algorithm improves on DDPG by adding:
 - Noise to target policy to avoid propagating unrealistic value estimates
 - Delay policy updates to have better value estimates
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl import logger, nest
+from dl import logger, nest, Algorithm
 import gin
 import os
 import time
@@ -64,7 +63,7 @@ class TD3Actor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class TD3(RLTrainer):
+class TD3(Algorithm):
     """TD3 algorithm."""
 
     def __init__(self,

@@ -1,1 +1,1 @@
-python -m dl.train logs ./ppo.gin
+python -m dl.main logs ./ppo.gin

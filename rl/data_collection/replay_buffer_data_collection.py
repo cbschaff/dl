@@ -98,8 +98,6 @@ class ReplayBufferDataManager(object):
 
 if __name__ == '__main__':
     import unittest
-    import shutil
-    from dl.rl.trainers import RLTrainer
     from dl.rl.modules import QFunction, DiscreteQFunctionBase
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet
@@ -156,26 +154,25 @@ if __name__ == '__main__':
             ob, r, done, info = self.venv.step_wait()
             return (ob, ob), r, done, info
 
-    class T(RLTrainer):
-        """Test trainer."""
+    class TestReplayBufferDataManager(unittest.TestCase):
+        """Test case."""
 
-        def __init__(self, *args, nested=False, base=None, **kwargs):
-            """Init."""
-            super().__init__(*args, **kwargs)
-            self.qf = QFunction(base(self.env.observation_space,
-                                     self.env.action_space))
-            if nested:
-                self.env = NestedVecObWrapper(self.env)
-            self.buffer = ReplayBuffer(2000, 1)
-            self.data_manager = ReplayBufferDataManager(
-                    self.buffer, self.env, act_fn=BufferActor(self.qf),
-                    device=self.device, learning_starts=50, update_period=2)
+        def test(self):
+            """Test."""
+            env = make_env('CartPole-v1')
+            qf = QFunction(FeedForwardBase(env.observation_space,
+                                           env.action_space))
+            buffer = ReplayBuffer(2000, 1)
+            data_manager = ReplayBufferDataManager(
+                    buffer, env, act_fn=BufferActor(qf),
+                    device='cpu', learning_starts=50, update_period=2)
 
-        def step(self):
-            """Step."""
-            self.t += self.data_manager.step_until_update()
-            batch = self.data_manager.sample(32)
-            self.data_manager.act(batch['obs'])
+            for _ in range(11):
+                data_manager.step_until_update()
+            assert buffer.num_in_buffer == 70
+
+            batch = data_manager.sample(32)
+            data_manager.act(batch['obs'])
             assert batch['action'].shape == batch['reward'].shape
             assert batch['action'].shape == batch['done'].shape
             if isinstance(batch['obs'], list):
@@ -186,33 +183,31 @@ if __name__ == '__main__':
                 assert len(batch['obs'].shape) == 2
             assert len(batch['action'].shape) == 1
 
-        def state_dict(self):
-            """State dict."""
-            return {}
-
-        def load_state_dict(self, state_dict):
-            """Load state dict."""
-            pass
-
-    def env(rank):
-        """Env function."""
-        return make_env('CartPole-v1', rank=rank)
-
-    class TestReplayBufferDataManager(unittest.TestCase):
-        """Test case."""
-
-        def test(self):
-            """Test."""
-            t = T('./test', env, base=FeedForwardBase, maxt=1000)
-            t.train()
-            assert t.buffer.num_in_buffer == 1000
-            shutil.rmtree('./test')
-
         def test_nested_ob(self):
             """Test."""
-            t = T('./test', env, nested=True, base=FeedForwardBase, maxt=1000)
-            t.train()
-            assert t.buffer.num_in_buffer == 1000
-            shutil.rmtree('./test')
+            env = make_env('CartPole-v1')
+            qf = QFunction(FeedForwardBase(env.observation_space,
+                                           env.action_space))
+            env = NestedVecObWrapper(env)
+            buffer = ReplayBuffer(2000, 1)
+            data_manager = ReplayBufferDataManager(
+                    buffer, env, act_fn=BufferActor(qf),
+                    device='cpu', learning_starts=50, update_period=2)
+
+            for _ in range(11):
+                data_manager.step_until_update()
+            assert buffer.num_in_buffer == 70
+
+            batch = data_manager.sample(32)
+            data_manager.act(batch['obs'])
+            assert batch['action'].shape == batch['reward'].shape
+            assert batch['action'].shape == batch['done'].shape
+            if isinstance(batch['obs'], list):
+                assert batch['obs'][0].shape == batch['next_obs'][0].shape
+                assert len(batch['obs'][0].shape) == 2
+            else:
+                assert batch['obs'].shape == batch['next_obs'].shape
+                assert len(batch['obs'].shape) == 2
+            assert len(batch['action'].shape) == 1
 
     unittest.main()

@@ -52,10 +52,10 @@ class StatefulSampler(TorchSampler.Sampler):
     def state_dict(self, loader_iter=None):
         """Save sampler state."""
         prefetched_num = 0
-        if loader_iter and loader_iter.num_workers > 0:
-            batch_size = loader_iter.batch_sampler.batch_size
+        if loader_iter and loader_iter._num_workers > 0:
+            batch_size = loader_iter._index_sampler.batch_size
             prefetched_num = \
-                (loader_iter.send_idx - loader_iter.rcvd_idx) * batch_size
+                (loader_iter._send_idx - loader_iter._rcvd_idx) * batch_size
         return {
             'indices': np.array(self.indices),
             'iter_counter': self.iter_counter - prefetched_num
@@ -65,7 +65,6 @@ class StatefulSampler(TorchSampler.Sampler):
 if __name__ == '__main__':
     import unittest
     from torch.utils.data import Dataset, DataLoader
-    import time
 
     class TestSampler(unittest.TestCase):
         """Test."""
@@ -97,4 +96,4 @@ if __name__ == '__main__':
             assert len(used_inds) == 100
             assert len(set(used_inds)) == 100
 
-        unittest.main()
+    unittest.main()

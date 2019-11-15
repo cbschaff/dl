@@ -48,76 +48,6 @@ class EpisodeInfo(Wrapper):
         return ob, r, done, info
 
 
-class EpisodeLogger(Wrapper):
-    """Logs episode stats to TensorBoard.
-
-    If the env has also been wrapped with an EpisodeInfo Wrapper,
-    those stats will also be logged under env/unwrapped_episode_*.
-    """
-
-    def __init__(self, env, tstart=0):
-        """Init."""
-        super().__init__(env)
-        self.t = tstart
-        self.eplen = 0
-        self.eprew = 0.
-        self._eval = False
-
-    def reset(self, **kwargs):
-        """Reset."""
-        self.eplen = 0
-        self.eprew = 0.
-        return self.env.reset()
-
-    def step(self, action):
-        """Step."""
-        ob, r, done, info = self.env.step(action)
-        if not self._eval:
-            self.t += 1
-        self.eplen += 1
-        self.eprew += r
-        if done:
-            if not self._eval:
-                logger.add_scalar('env/episode_length', self.eplen, self.t,
-                                  time.time())
-                logger.add_scalar('env/episode_reward', self.eprew, self.t,
-                                  time.time())
-            self.eplen = 0
-            self.eprew = 0.
-        # log unwrapped episode stats if they exist
-        if 'episode_info' in info:
-            epinfo = info['episode_info']
-            if epinfo['done'] and not self._eval:
-                logger.add_scalar('env/unwrapped_episode_length',
-                                  epinfo['length'], self.t, time.time())
-                logger.add_scalar('env/unwrapped_episode_reward',
-                                  epinfo['reward'], self.t, time.time())
-
-        return ob, r, done, info
-
-    def eval(self):
-        """Set the environment to eval mode.
-
-        Eval mode disables logging and stops counting steps.
-        """
-        self._eval = True
-
-    def train(self):
-        """Set the environment to train mode.
-
-        Train mode counts steps and logs episode stats.
-        """
-        self._eval = False
-
-    def state_dict(self):
-        """State dict."""
-        return {'t': self.t}
-
-    def load_state_dict(self, state_dict):
-        """Load state dict."""
-        self.t = state_dict['t']
-
-
 class VecEpisodeLogger(VecEnvWrapper):
     """EpisodeLogger for vecorized environments."""
 
@@ -211,37 +141,6 @@ if __name__ == '__main__':
                 assert done == info['episode_info']['done']
                 assert len == info['episode_info']['length']
                 assert rew == info['episode_info']['reward']
-
-        def test_logger(self):
-            """Test logger."""
-            logger.configure('./.test')
-            env = gym.make('PongNoFrameskip-v4')
-            env = EpisodeInfo(env)
-            env = EpisodeLogger(env)
-            env.reset()
-            done = False
-            while not done:
-                _, _, done, _ = env.step(env.action_space.sample())
-            state = env.state_dict()
-            assert state['t'] == env.t
-            state['t'] = 0
-            env.load_state_dict(state)
-            assert env.t == 0
-
-            env.eval()
-            env.reset()
-            for _ in range(10):
-                env.step(env.action_space.sample())
-            assert env.t == 0
-            assert env.eplen == 10
-            env.train()
-            for _ in range(10):
-                env.step(env.action_space.sample())
-            assert env.t == 10
-            assert env.eplen == 20
-
-            logger.flush()
-            shutil.rmtree('./.test')
 
         def test_vec_logger(self):
             """Test vec logger."""

@@ -121,20 +121,10 @@ def env_load_state_dict(env, state_dict, ind=0):
 if __name__ == '__main__':
     import unittest
     from dl.rl.envs import VecEpisodeLogger, VecObsNormWrapper, make_atari_env
-    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
     def make_env(nenv):
         """Create a training environment."""
-        def _env(rank):
-            def _thunk():
-                return make_atari_env("Pong", rank=rank)
-            return _thunk
-        if nenv > 1:
-            env = SubprocVecEnv([_env(i) for i in range(nenv)],
-                                context='fork')
-        else:
-            env = DummyVecEnv([_env(0)])
-        return VecEpisodeLogger(VecObsNormWrapper(env))
+        return VecEpisodeLogger(VecObsNormWrapper(make_atari_env("Pong", nenv)))
 
     class TestMisc(unittest.TestCase):
         """Test Case."""

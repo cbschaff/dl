@@ -152,8 +152,6 @@ class RolloutDataManager(object):
 
 if __name__ == '__main__':
     import unittest
-    import shutil
-    from dl.rl.trainers import RLTrainer
     from dl.rl.modules import Policy, ActorCriticBase
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet, Categorical, DiagGaussian
@@ -250,101 +248,59 @@ if __name__ == '__main__':
             ob, r, done, info = self.venv.step_wait()
             return (ob, ob), r, done, info
 
-    class T(RLTrainer):
-        """Test trainer."""
-
-        def __init__(self, *args, nested=False, base=None,
-                     batch_size=32, **kwargs):
-            """Init."""
-            super().__init__(*args, **kwargs)
-            self.pi = Policy(base(self.env.observation_space,
-                                  self.env.action_space))
-            if nested:
-                self.env = NestedVecObWrapper(self.env)
-            self.data_manager = RolloutDataManager(self.env,
-                                                   RolloutActor(self.pi),
-                                                   self.device,
-                                                   batch_size=batch_size)
-
-        def step(self):
-            """Step."""
-            self.data_manager.rollout()
+    def test(env, base, batch_size, nested):
+        pi = Policy(base(env.observation_space,
+                         env.action_space))
+        if nested:
+            env = NestedVecObWrapper(env)
+        nenv = env.num_envs
+        data_manager = RolloutDataManager(env, RolloutActor(pi), 'cpu',
+                                          batch_size=batch_size)
+        for _ in range(3):
+            data_manager.rollout()
             count = 0
-            for batch in self.data_manager.sampler():
+            for batch in data_manager.sampler():
                 assert 'key1' in batch
                 count += 1
                 assert 'mask' in batch
-                if self.data_manager.recurrent:
+                if data_manager.recurrent:
                     assert 'state' in batch
-                    self.data_manager.act(batch['obs'], batch['state'],
-                                          batch['mask'])
+                    data_manager.act(batch['obs'], batch['state'],
+                                     batch['mask'])
                 else:
-                    self.data_manager.act(batch['obs'])
-            if self.data_manager.recurrent:
-                assert count == self.nenv // self.data_manager.batch_size
+                    data_manager.act(batch['obs'])
+            if data_manager.recurrent:
+                assert count == nenv // data_manager.batch_size
             else:
                 assert count == (
-                    (self.nenv * self.data_manager.rollout_length)
-                    // self.data_manager.batch_size)
-            self.t += self.nenv * self.data_manager.rollout_length
+                    (nenv * data_manager.rollout_length)
+                    // data_manager.batch_size)
 
-        def state_dict(self):
-            """State dict."""
-            return {}
-
-    def env_discrete(rank):
+    def env_discrete(nenv):
         """Create discrete env."""
-        return make_env('CartPole-v1', rank=rank)
+        return make_env('CartPole-v1', nenv=nenv)
 
-    def env_continuous(rank):
+    def env_continuous(nenv):
         """Create continuous env."""
-        return make_env('LunarLanderContinuous-v2', rank=rank)
+        return make_env('LunarLanderContinuous-v2', nenv=nenv)
 
     class TestRolloutDataCollection(unittest.TestCase):
         """Test case."""
 
         def test_feed_forward(self):
             """Test feed forward network."""
-            t = T('./test', env_discrete, nenv=2, base=FeedForwardBase,
-                  maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
-            t = T('./test', env_continuous, nenv=2, base=FeedForwardBase,
-                  maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
+            test(env_discrete(2), FeedForwardBase, 32, False)
 
         def test_recurrent(self):
             """Test recurrent network."""
-            t = T('./test', env_discrete, nenv=2, batch_size=1, base=RNNBase,
-                  maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
-            t = T('./test', env_continuous, nenv=2, batch_size=1, base=RNNBase,
-                  maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
+            test(env_discrete(2), RNNBase, 2, False)
 
         def test_feed_forward_nested_ob(self):
             """Test feed forward network."""
-            t = T('./test', env_discrete, nested=True, nenv=2, batch_size=1,
-                  base=FeedForwardBase, maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
-            t = T('./test', env_continuous, nested=True, nenv=2, batch_size=1,
-                  base=FeedForwardBase, maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
+            test(env_discrete(2), FeedForwardBase, 32, False)
 
         def test_recurrent_nested_ob(self):
             """Test recurrent network."""
-            t = T('./test', env_discrete, nested=True, nenv=2, batch_size=1,
-                  base=RNNBase, maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
-            t = T('./test', env_continuous, nested=True, nenv=2, batch_size=1,
-                  base=RNNBase, maxt=1000)
-            t.train()
-            shutil.rmtree('./test')
+            test(env_discrete(2), RNNBase, 2, False)
 
     unittest.main()

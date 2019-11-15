@@ -1,5 +1,4 @@
 """Extends the Trainer class with environment utils."""
-from dl import Trainer
 from dl import logger
 from dl.rl.envs import VecEpisodeLogger, VecObsNormWrapper
 from dl.rl.util import rl_evaluate, rl_record, misc
@@ -11,7 +10,7 @@ import time
 
 
 @gin.configurable(blacklist=['logdir'])
-class RLTrainer(Trainer):
+class RLTrainer():
     """Extends Trainer with basic functionality for Reinforcement Learning.
 
     The resposibilities of this class are:
@@ -30,7 +29,6 @@ class RLTrainer(Trainer):
                  logdir,
                  env_fn,
                  nenv=1,
-                 norm_observations=False,
                  eval_num_episodes=1,
                  record_num_episodes=1,
                  **kwargs):
@@ -38,7 +36,6 @@ class RLTrainer(Trainer):
         super().__init__(logdir, **kwargs)
         self.env_fn = env_fn
         self.nenv = nenv
-        self.norm_observations = norm_observations
         self.eval_num_episodes = eval_num_episodes
         self.record_num_episodes = record_num_episodes
         self.env = self.make_training_env()

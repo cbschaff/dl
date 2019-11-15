@@ -2,9 +2,8 @@
 
 https://arxiv.org/abs/1509.02971
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl import logger, nest
+from dl import logger, nest, Algorithm
 import gin
 import os
 import time
@@ -87,7 +86,7 @@ class DDPGActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class DDPG(RLTrainer):
+class DDPG(Algorithm):
     """DDPG algorithm."""
 
     def __init__(self,

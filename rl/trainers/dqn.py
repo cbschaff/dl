@@ -2,10 +2,9 @@
 
 https://www.nature.com/articles/nature14236
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.rl.modules import QFunction
-from dl import logger, nest
+from dl import logger, nest, Algorithm
 import gin
 import os
 import time
@@ -46,7 +45,7 @@ class EpsilonGreedyActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class DQN(RLTrainer):
+class DQN(Algorithm):
     """DQN algorithm."""
 
     def __init__(self,
