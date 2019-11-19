@@ -276,7 +276,7 @@ if __name__ == '__main__':
         def test(self):
             """Test."""
             buffer = ReplayBuffer(10, 4)
-            env = atari_env('Pong')
+            env = atari_env('Pong').envs[0]
             init_obs = env.reset()
             idx = buffer.store_observation(init_obs)
             assert np.allclose(buffer.encode_recent_observation()[:-3], 0)
@@ -337,7 +337,7 @@ if __name__ == '__main__':
         def test_nested_obs(self):
             """Test."""
             buffer = ReplayBuffer(10, 4)
-            env = atari_env('Pong')
+            env = atari_env('Pong').envs[0]
             env = NestedObWrapper(env)
             env = NestedObWrapper(env)
             init_obs = env.reset()

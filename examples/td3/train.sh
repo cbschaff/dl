@@ -1,1 +1,1 @@
-python -m dl.train logs ./td3.gin
+python -m dl.main logs ./td3.gin

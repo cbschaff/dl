@@ -2,17 +2,17 @@
 
 https://arxiv.org/abs/1801.01290
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
 from dl.modules import TanhNormal
-from dl import logger, nest
+from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.envs import VecFrameStack
+from dl.rl.util import rl_evaluate, rl_record, misc
+from dl.rl.envs import VecFrameStack, VecEpisodeLogger
 
 
 def soft_target_update(target_net, net, tau):
@@ -34,7 +34,7 @@ class SACActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class SAC(RLTrainer):
+class SAC(Algorithm):
     """SAC algorithm."""
 
     def __init__(self,
@@ -43,6 +43,7 @@ class SAC(RLTrainer):
                  policy_fn,
                  qf_fn,
                  vf_fn,
+                 nenv=1,
                  optimizer=torch.optim.Adam,
                  buffer_size=10000,
                  frame_stack=1,
@@ -61,10 +62,17 @@ class SAC(RLTrainer):
                  reparameterization_trick=True,
                  target_entropy=None,
                  reward_scale=1,
-                 log_period=1000,
-                 **kwargs):
+                 gpu=True,
+                 eval_num_episodes=1,
+                 record_num_episodes=1,
+                 log_period=1000):
         """Init."""
-        super().__init__(logdir, env_fn, **kwargs)
+        self.logdir = logdir
+        self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))
+        self.env_fn = env_fn
+        self.nenv = nenv
+        self.eval_num_episodes = eval_num_episodes
+        self.record_num_episodes = record_num_episodes
         self.gamma = gamma
         self.buffer_size = buffer_size
         self.frame_stack = frame_stack
@@ -86,6 +94,10 @@ class SAC(RLTrainer):
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
 
+        self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
+                                   else 'cpu')
+
+        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
         eval_env = VecFrameStack(self.env, self.frame_stack)
         self.pi = policy_fn(eval_env)
         self.qf1 = qf_fn(eval_env)
@@ -135,39 +147,7 @@ class SAC(RLTrainer):
         self.vf_criterion = torch.nn.MSELoss()
         self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
 
-    def state_dict(self):
-        """State dict."""
-        return {
-            'pi': self.pi.state_dict(),
-            'qf1': self.qf1.state_dict(),
-            'qf2': self.qf2.state_dict(),
-            'vf': self.vf.state_dict(),
-            'opt_pi': self.opt_pi.state_dict(),
-            'opt_qf1': self.opt_qf1.state_dict(),
-            'opt_qf2': self.opt_qf2.state_dict(),
-            'opt_vf': self.opt_vf.state_dict(),
-            'log_alpha': (self.log_alpha if self.automatic_entropy_tuning
-                          else None),
-            'opt_alpha': (self.opt_alpha.state_dict()
-                          if self.automatic_entropy_tuning else None)}
-
-    def load_state_dict(self, state_dict):
-        """Load state dict."""
-        self.pi.load_state_dict(state_dict['pi'])
-        self.qf1.load_state_dict(state_dict['qf1'])
-        self.qf2.load_state_dict(state_dict['qf2'])
-        self.vf.load_state_dict(state_dict['vf'])
-        self.target_vf.load_state_dict(state_dict['vf'])
-
-        self.opt_pi.load_state_dict(state_dict['opt_pi'])
-        self.opt_qf1.load_state_dict(state_dict['opt_qf1'])
-        self.opt_qf2.load_state_dict(state_dict['opt_qf2'])
-        self.opt_vf.load_state_dict(state_dict['opt_vf'])
-
-        if state_dict['log_alpha']:
-            with torch.no_grad():
-                self.log_alpha.copy_(state_dict['log_alpha'])
-        self.opt_vf.load_state_dict(state_dict['opt_vf'])
+        self.t = 0
 
     def loss(self, batch):
         """Loss function."""
@@ -286,45 +266,115 @@ class SAC(RLTrainer):
                 self.opt_pi.zero_grad()
                 pi_loss.backward()
                 self.opt_pi.step()
+        return self.t
 
     def evaluate(self):
         """Evaluate."""
         eval_env = VecFrameStack(self.env, self.frame_stack)
-        self.rl_evaluate(eval_env, self.pi)
-        self.rl_record(eval_env, self.pi)
-        if self.data_manager:
-            self.data_manager.manual_reset()
+        self.pi.eval()
+        misc.set_env_to_eval_mode(eval_env)
 
-    def _save(self, state_dict):
+        # Eval policy
+        os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'eval',
+                               self.ckptr.format.format(self.t) + '.json')
+        stats = rl_evaluate(eval_env, self.pi, self.eval_num_episodes,
+                            outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
+                          self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'],
+                          self.t, time.time())
+
+        # Record policy
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video',
+                               self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(eval_env, self.pi, self.record_num_episodes, outfile,
+                  self.device)
+
+        self.pi.train()
+        misc.set_env_to_train_mode(self.env)
+        self.data_manager.manual_reset()
+
+    def save(self):
+        """Save."""
+        state_dict = {
+            'pi': self.pi.state_dict(),
+            'qf1': self.qf1.state_dict(),
+            'qf2': self.qf2.state_dict(),
+            'vf': self.vf.state_dict(),
+            'opt_pi': self.opt_pi.state_dict(),
+            'opt_qf1': self.opt_qf1.state_dict(),
+            'opt_qf2': self.opt_qf2.state_dict(),
+            'opt_vf': self.opt_vf.state_dict(),
+            'log_alpha': (self.log_alpha if self.automatic_entropy_tuning
+                          else None),
+            'opt_alpha': (self.opt_alpha.state_dict()
+                          if self.automatic_entropy_tuning else None),
+            'env': misc.env_state_dict(self.env),
+            't': self.t
+        }
+        buffer_dict = self.buffer.state_dict()
+        state_dict['buffer_format'] = nest.get_structure(buffer_dict)
+        self.ckptr.save(state_dict, self.t)
+
         # save buffer seperately and only once (because it can be huge)
-        buffer_dict = self.buffer.state_dict()
         np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
-                 *nest.flatten(buffer_dict))
-        super()._save(state_dict)
+                 **{f'{i:04d}': x for i, x in
+                    enumerate(nest.flatten(buffer_dict))})
 
-    def _load(self, state_dict):
-        # initialize data format of buffer if needed.
-        self.data_manager.env_step_and_store_transition()
-        buffer_dict = self.buffer.state_dict()
+    def load(self, t=None):
+        """Load."""
+        state_dict = self.ckptr.load(t)
+        if state_dict is None:
+            self.t = 0
+            return self.t
+        self.pi.load_state_dict(state_dict['pi'])
+        self.qf1.load_state_dict(state_dict['qf1'])
+        self.qf2.load_state_dict(state_dict['qf2'])
+        self.vf.load_state_dict(state_dict['vf'])
+        self.target_vf.load_state_dict(state_dict['vf'])
+
+        self.opt_pi.load_state_dict(state_dict['opt_pi'])
+        self.opt_qf1.load_state_dict(state_dict['opt_qf1'])
+        self.opt_qf2.load_state_dict(state_dict['opt_qf2'])
+        self.opt_vf.load_state_dict(state_dict['opt_vf'])
+
+        if state_dict['log_alpha']:
+            with torch.no_grad():
+                self.log_alpha.copy_(state_dict['log_alpha'])
+            self.opt_alpha.load_state_dict(state_dict['opt_alpha'])
+        misc.env_load_state_dict(self.env, state_dict['env'])
+        self.t = state_dict['t']
+
+        buffer_format = state_dict['buffer_format']
         buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
                                                  'buffer.npz')))
         buffer_state = nest.flatten(buffer_state)
         self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
-                                                          buffer_dict))
-        super()._load(state_dict)
-        if self.data_manager:
-            self.data_manager.manual_reset()
+                                                          buffer_format))
+        self.data_manager.manual_reset()
+        return self.t
+
+    def close(self):
+        """Close environment."""
+        try:
+            self.env.close()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
     import unittest
     import shutil
+    from dl import train
     from dl.rl.envs import make_env
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
     from dl.rl.modules import QFunction, ValueFunction, UnnormActionPolicy
     from dl.rl.modules import ValueFunctionBase
     from dl.modules import TanhDiagGaussian
     import torch.nn.functional as F
+    from functools import partial
 
     class PiBase(PolicyBase):
         """Policy network."""
@@ -378,9 +428,9 @@ if __name__ == '__main__':
             x = F.relu(self.fc3(x))
             return self.value(x)
 
-    def env_fn(rank):
+    def env_fn(nenv):
         """Environment function."""
-        return make_env('LunarLanderContinuous-v2', rank=rank)
+        return make_env('LunarLanderContinuous-v2', nenv=nenv)
 
     def policy_fn(env):
         """Create a policy."""
@@ -400,21 +450,19 @@ if __name__ == '__main__':
 
         def test_sac(self):
             """Test."""
-            sac = SAC('logs',
-                      env_fn,
-                      policy_fn,
-                      qf_fn,
-                      vf_fn,
-                      learning_starts=300,
-                      eval_num_episodes=1,
-                      buffer_size=500,
-                      target_update_period=100,
-                      maxt=1000,
-                      eval=False,
-                      eval_period=1000,
-                      reparameterization_trick=True)
-            sac.train()
-            sac.load()
+            sac = partial(SAC,
+                          env_fn=env_fn,
+                          policy_fn=policy_fn,
+                          qf_fn=qf_fn,
+                          vf_fn=vf_fn,
+                          learning_starts=300,
+                          eval_num_episodes=1,
+                          buffer_size=500,
+                          target_update_period=100,
+                          reparameterization_trick=True)
+            train('logs', sac, maxt=1000, eval=False, eval_period=1000)
+            alg = sac('logs')
+            alg.load()
             shutil.rmtree('logs')
 
     unittest.main()

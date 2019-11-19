@@ -1,1 +1,1 @@
-python -m dl.train logs ./dqn.gin
+python -m dl.main logs ./dqn.gin

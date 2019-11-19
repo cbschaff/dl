@@ -182,7 +182,7 @@ if __name__ == '__main__':
             """Test."""
             buffer = ReplayBuffer(10, 4)
             buffer = PrioritizedReplayBuffer(buffer, alpha=0.5)
-            env = atari_env('Pong')
+            env = atari_env('Pong').envs[0]
             init_obs = env.reset()
             idx = buffer.store_observation(init_obs)
             assert np.allclose(buffer.encode_recent_observation()[:-3], 0)

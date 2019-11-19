@@ -1,1 +1,1 @@
-python -m dl.train logs ./sac.gin
+python -m dl.main logs ./sac.gin

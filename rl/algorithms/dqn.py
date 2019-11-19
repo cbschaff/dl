@@ -2,17 +2,16 @@
 
 https://www.nature.com/articles/nature14236
 """
-from dl.rl.trainers import RLTrainer
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl.rl.modules import QFunction
-from dl import logger, nest
+from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.envs import VecFrameStack, VecEpsilonGreedy
+from dl.rl.util import rl_evaluate, rl_record, misc
+from dl.rl.envs import VecFrameStack, VecEpsilonGreedy, VecEpisodeLogger
 from baselines.common.schedules import LinearSchedule
 
 
@@ -46,13 +45,14 @@ class EpsilonGreedyActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class DQN(RLTrainer):
+class DQN(Algorithm):
     """DQN algorithm."""
 
     def __init__(self,
                  logdir,
                  env_fn,
                  qf_fn,
+                 nenv=1,
                  optimizer=torch.optim.RMSprop,
                  buffer_size=100000,
                  frame_stack=1,
@@ -65,10 +65,17 @@ class DQN(RLTrainer):
                  eval_eps=0.05,
                  target_update_period=10000,
                  batch_size=32,
-                 log_period=10,
-                 **kwargs):
+                 gpu=True,
+                 eval_num_episodes=1,
+                 record_num_episodes=1,
+                 log_period=10):
         """Init."""
-        super().__init__(logdir, env_fn, **kwargs)
+        self.logdir = logdir
+        self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))
+        self.env_fn = env_fn
+        self.nenv = nenv
+        self.eval_num_episodes = eval_num_episodes
+        self.record_num_episodes = record_num_episodes
         self.gamma = gamma
         self.frame_stack = frame_stack
         self.buffer_size = buffer_size
@@ -79,39 +86,32 @@ class DQN(RLTrainer):
         self.target_update_period = target_update_period - (
             target_update_period % self.update_period)
         self.log_period = log_period
-        self.eps_schedule = LinearSchedule(exploration_timesteps, final_eps,
-                                           1.0)
+        self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
+                                   else 'cpu')
 
-        self.qf = qf_fn(VecFrameStack(self.env,
-                                      self.frame_stack)).to(self.device)
-        self.qf_targ = qf_fn(VecFrameStack(self.env,
-                                           self.frame_stack)).to(self.device)
+        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
+        stacked_env = VecFrameStack(env_fn(nenv=nenv), self.frame_stack)
+
+        self.qf = qf_fn(stacked_env).to(self.device)
+        self.qf_targ = qf_fn(stacked_env).to(self.device)
         self.opt = optimizer(self.qf.parameters())
         if huber_loss:
             self.criterion = torch.nn.SmoothL1Loss(reduction='none')
         else:
             self.criterion = torch.nn.MSELoss(reduction='none')
+        self.eps_schedule = LinearSchedule(exploration_timesteps, final_eps,
+                                           1.0)
         self._actor = EpsilonGreedyActor(self.qf, self.eps_schedule,
                                          self.env.action_space)
 
         self.buffer = ReplayBuffer(self.buffer_size, self.frame_stack)
-        self.data_manager = None  # lazy init
-
-    def state_dict(self):
-        """State dict."""
-        return {
-            'qf': self.qf.state_dict(),
-            'qf_targ': self.qf.state_dict(),
-            'opt': self.opt.state_dict(),
-            '_actor': self._actor.state_dict()
-        }
-
-    def load_state_dict(self, state_dict):
-        """Load dict."""
-        self.qf.load_state_dict(state_dict['qf'])
-        self.qf_targ.load_state_dict(state_dict['qf_targ'])
-        self.opt.load_state_dict(state_dict['opt'])
-        self._actor.load_state_dict(state_dict['_actor'])
+        self.data_manager = ReplayBufferDataManager(self.buffer,
+                                                    self.env,
+                                                    self._actor,
+                                                    self.device,
+                                                    self.learning_starts,
+                                                    self.update_period)
+        self.t = 0
 
     def _compute_target(self, rew, next_ob, done):
         qtarg = self.qf_targ(next_ob).max_q
@@ -142,14 +142,6 @@ class DQN(RLTrainer):
 
     def step(self):
         """Step."""
-        if self.data_manager is None:
-            self.data_manager = ReplayBufferDataManager(self.buffer,
-                                                        self.env,
-                                                        self._actor,
-                                                        self.device,
-                                                        self.learning_starts,
-                                                        self.update_period)
-
         self.t += self.data_manager.step_until_update()
         if self.t % self.target_update_period == 0:
             self.qf_targ.load_state_dict(self.qf.state_dict())
@@ -158,44 +150,96 @@ class DQN(RLTrainer):
         loss = self.loss(self._get_batch())
         loss.backward()
         self.opt.step()
+        return self.t
 
     def evaluate(self):
         """Evaluate."""
         eval_env = VecEpsilonGreedy(VecFrameStack(self.env, self.frame_stack),
                                     self.eval_eps)
-        self.rl_evaluate(eval_env, self.qf)
-        self.rl_record(eval_env, self.qf)
-        if self.data_manager:
-            self.data_manager.manual_reset()
+        self.qf.eval()
+        misc.set_env_to_eval_mode(eval_env)
 
-    def _save(self, state_dict):
+        # Eval policy
+        os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'eval',
+                               self.ckptr.format.format(self.t) + '.json')
+        stats = rl_evaluate(eval_env, self.qf, self.eval_num_episodes,
+                            outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
+                          self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'],
+                          self.t, time.time())
+
+        # Record policy
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video',
+                               self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(eval_env, self.qf, self.record_num_episodes, outfile,
+                  self.device)
+
+        self.qf.train()
+        misc.set_env_to_train_mode(self.env)
+        self.data_manager.manual_reset()
+
+    def save(self):
+        """Save."""
+        state_dict = {
+            'qf': self.qf.state_dict(),
+            'qf_targ': self.qf.state_dict(),
+            'opt': self.opt.state_dict(),
+            '_actor': self._actor.state_dict(),
+            'env': misc.env_state_dict(self.env),
+            't': self.t
+        }
+        buffer_dict = self.buffer.state_dict()
+        state_dict['buffer_format'] = nest.get_structure(buffer_dict)
+        self.ckptr.save(state_dict, self.t)
+
         # save buffer seperately and only once (because it can be huge)
-        buffer_dict = self.buffer.state_dict()
         np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
-                 *nest.flatten(buffer_dict))
-        super()._save(state_dict)
+                 **{f'{i:04d}': x for i, x in
+                    enumerate(nest.flatten(buffer_dict))})
 
-    def _load(self, state_dict):
-        # initialize data format of buffer if needed.
-        self.data_manager.env_step_and_store_transition()
-        buffer_dict = self.buffer.state_dict()
+    def load(self, t=None):
+        """Load."""
+        state_dict = self.ckptr.load(t)
+        if state_dict is None:
+            self.t = 0
+            return self.t
+        self.qf.load_state_dict(state_dict['qf'])
+        self.qf_targ.load_state_dict(state_dict['qf_targ'])
+        self.opt.load_state_dict(state_dict['opt'])
+        self._actor.load_state_dict(state_dict['_actor'])
+        misc.env_load_state_dict(self.env, state_dict['env'])
+        self.t = state_dict['t']
+
+        buffer_format = state_dict['buffer_format']
         buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
                                                  'buffer.npz')))
         buffer_state = nest.flatten(buffer_state)
         self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
-                                                          buffer_dict))
-        super()._load(state_dict)
-        if self.data_manager:
-            self.data_manager.manual_reset()
+                                                          buffer_format))
+        self.data_manager.manual_reset()
+        return self.t
+
+    def close(self):
+        """Close environment."""
+        try:
+            self.env.close()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
     import unittest
     import shutil
+    from dl import train
     from dl.rl.envs import make_atari_env
     from dl.rl.modules import DiscreteQFunctionBase
+    from dl.rl.modules import QFunction
     from dl.rl.util import conv_out_shape
     import torch.nn.functional as F
+    from functools import partial
 
     class NatureDQN(DiscreteQFunctionBase):
         """Deep network from https://www.nature.com/articles/nature14236."""
@@ -226,27 +270,26 @@ if __name__ == '__main__':
 
         def test_ql(self):
             """Test."""
-            def env_fn(rank):
-                return make_atari_env('Pong', rank=rank, frame_stack=4)
+            def env_fn(nenv):
+                return make_atari_env('Pong', nenv, frame_stack=1)
 
             def qf_fn(env):
                 return QFunction(NatureDQN(env.observation_space,
                                            env.action_space))
 
-            ql = DQN('logs',
-                     env_fn,
-                     qf_fn,
-                     learning_starts=100,
-                     buffer_size=200,
-                     update_period=4,
-                     exploration_timesteps=500,
-                     target_update_period=100,
-                     maxt=1000,
-                     eval=True,
-                     eval_period=1000)
-            ql.train()
-            assert np.allclose(ql.eps_schedule.value(ql.t), 0.1)
-            ql.load()
+            ql = partial(DQN,
+                         env_fn=env_fn,
+                         qf_fn=qf_fn,
+                         learning_starts=100,
+                         buffer_size=200,
+                         update_period=4,
+                         frame_stack=4,
+                         exploration_timesteps=500,
+                         target_update_period=100)
+            train('logs', ql, maxt=1000, eval=True, eval_period=1000)
+            alg = ql('logs')
+            alg.load()
+            assert np.allclose(alg.eps_schedule.value(alg.t), 0.1)
             shutil.rmtree('logs')
 
     unittest.main()

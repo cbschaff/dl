@@ -1,31 +1,25 @@
 # Hyperparameters for TD3 from https://arxiv.org/abs/1802.09477
 import dl.examples.td3
 
-train.Trainer = @TD3
-
-optim.Adam.betas = (0.9, 0.999)
-
-TD3.maxt = 1000000
-TD3.seed = 0
-TD3.eval = True
-TD3.eval_period = 100000
-TD3.save_period = 100000
-TD3.maxseconds = None
-TD3.gpu = True
+train.algorithm = @TD3
+train.maxt = 1000000
+train.seed = 0
+train.eval = True
+train.eval_period = 100000
+train.save_period = 100000
+train.maxseconds = None
 
 TD3.env_fn = @make_env
 TD3.policy_fn = @policy_fn
 TD3.qf_fn = @qf_fn
 TD3.nenv = 1
-TD3.norm_observations = True
 TD3.eval_num_episodes = 20
+TD3.gpu = True
 TD3.record_num_episodes = 5
-
 TD3.buffer_size = 100000
 TD3.frame_stack = 1
 TD3.learning_starts = 10000
 TD3.update_period = 1
-
 TD3.env_fn = @make_env
 TD3.optimizer = @optim.Adam
 TD3.batch_size = 256
@@ -41,11 +35,14 @@ TD3.log_period = 100
 
 Checkpointer.ckpt_period = 100000
 
-make_env.env_id = "LunarLanderContinuous-v2"
+optim.Adam.betas = (0.9, 0.999)
 
-ObsNorm.steps = 10000
-ObsNorm.mean = None
-ObsNorm.std = None
-ObsNorm.eps = 1e-2
-ObsNorm.log = True
-ObsNorm.log_prob = 0.01
+make_env.env_id = "LunarLanderContinuous-v2"
+make_env.norm_observations = True
+
+VecObsNormWrapper.steps = 10000
+VecObsNormWrapper.mean = None
+VecObsNormWrapper.std = None
+VecObsNormWrapper.eps = 1e-2
+VecObsNormWrapper.log = True
+VecObsNormWrapper.log_prob = 0.01

@@ -1,1 +1,1 @@
-python -m dl.train logs ./ddpg.gin
+python -m dl.main logs ./ddpg.gin

@@ -1,33 +1,26 @@
 # Hyperparameters from Soft Actor Critic: https://arxiv.org/abs/1812.05905
 import dl.examples.sac
 
-train.Trainer = @SAC
-
-optim.Adam.betas = (0.9, 0.999)
-
-SAC.maxt = 100000
-SAC.seed = 0
-SAC.eval = True
-SAC.eval_period = 10000
-SAC.save_period = 10000
-SAC.maxseconds = None
-SAC.gpu = True
+train.algorithm = @SAC
+train.maxt = 100000
+train.seed = 0
+train.eval = True
+train.eval_period = 10000
+train.save_period = 10000
+train.maxseconds = None
 
 SAC.env_fn = @make_env
 SAC.policy_fn = @policy_fn
 SAC.qf_fn = @qf_fn
 SAC.vf_fn = @vf_fn
 SAC.nenv = 1
-SAC.norm_observations = True
 SAC.eval_num_episodes = 20
 SAC.record_num_episodes = 5
-
 SAC.buffer_size = 10000
 SAC.frame_stack = 1
 SAC.learning_starts = 5000
 SAC.update_period = 1
-
-SAC.env_fn = @make_env
+SAC.gpu = True
 SAC.optimizer = @optim.Adam
 SAC.batch_size = 128
 SAC.policy_lr = 3e-4
@@ -46,13 +39,16 @@ SAC.log_period = 100
 
 Checkpointer.ckpt_period = 10000
 
+optim.Adam.betas = (0.9, 0.999)
+
 make_env.env_id = "LunarLanderContinuous-v2"
+make_env.norm_observations = True
 
 TanhDiagGaussian.constant_log_std = False
 
-ObsNorm.steps = 10000
-ObsNorm.mean = None
-ObsNorm.std = None
-ObsNorm.eps = 1e-2
-ObsNorm.log = True
-ObsNorm.log_prob = 0.01
+VecObsNormWrapper.steps = 10000
+VecObsNormWrapper.mean = None
+VecObsNormWrapper.std = None
+VecObsNormWrapper.eps = 1e-2
+VecObsNormWrapper.log = True
+VecObsNormWrapper.log_prob = 0.01
