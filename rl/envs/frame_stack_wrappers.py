@@ -52,18 +52,23 @@ class VecFrameStack(VecEnvWrapper):
         self.frames = nest.map_structure(_zero_frames, self.frames)
         self.frames = nest.map_structure(_add_ob,
                                          nest.zip_structure(self.frames, ob))
-        return self.frames
+        return nest.map_structure(lambda x: x.copy(), self.frames)
 
-    def step_wait(self):
+    def step(self, action):
         """Step."""
-        ob, reward, done, info = self.venv.step_wait()
+        ob, reward, done, info = self.venv.step(action)
 
         def _add_ob(item):
             return self._add_new_observation(*item)
 
         self.frames = nest.map_structure(_add_ob,
                                          nest.zip_structure(self.frames, ob))
-        return self.frames, reward, done, info
+        ob = nest.map_structure(lambda x: x.copy(), self.frames)
+        return ob, reward, done, info
+
+    def step_wait(self):
+        """Step wait."""
+        return self.venv.step_wait()
 
 
 if __name__ == '__main__':

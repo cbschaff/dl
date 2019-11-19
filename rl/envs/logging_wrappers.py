@@ -66,9 +66,9 @@ class VecEpisodeLogger(VecEnvWrapper):
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
         return obs
 
-    def step_wait(self):
+    def step(self, action):
         """Step."""
-        obs, rews, dones, infos = self.venv.step_wait()
+        obs, rews, dones, infos = self.venv.step(action)
         if not self._eval:
             self.t += self.num_envs
         self.lens += 1
@@ -93,6 +93,10 @@ class VecEpisodeLogger(VecEnvWrapper):
                                       epinfo['reward'], self.t, time.time())
 
         return obs, rews, dones, infos
+
+    def step_wait(self):
+        """Step wait."""
+        return self.venv.step_wait()
 
     def eval(self):
         """Set the environment to eval mode.

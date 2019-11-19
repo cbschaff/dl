@@ -114,9 +114,9 @@ class VecObsNormWrapper(VecEnvWrapper):
         """
         self._eval = False
 
-    def step_wait(self):
+    def step(self, action):
         """Step."""
-        obs, rews, dones, infos = self.venv.step_wait()
+        obs, rews, dones, infos = self.venv.step(action)
         if not self._eval:
             self.t += self.num_envs
         return self.norm_and_log(obs), rews, dones, infos
@@ -125,6 +125,9 @@ class VecObsNormWrapper(VecEnvWrapper):
         """Reset."""
         obs = self.venv.reset()
         return self._normalize(obs)
+
+    def step_wait(self):
+        return self.venv.step_wait()
 
 
 if __name__ == '__main__':
