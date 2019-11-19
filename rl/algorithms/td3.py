@@ -90,8 +90,7 @@ class TD3(Algorithm):
                  gpu=True,
                  eval_num_episodes=1,
                  record_num_episodes=1,
-                 log_period=1000,
-                 **kwargs):
+                 log_period=1000):
         """Init."""
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))
@@ -393,10 +392,7 @@ if __name__ == '__main__':
                           learning_starts=300,
                           eval_num_episodes=1,
                           buffer_size=500,
-                          policy_update_period=2,
-                          maxt=1000,
-                          eval=False,
-                          eval_period=1000)
+                          policy_update_period=2)
             train('logs', td3, maxt=1000, eval=False, eval_period=1000)
             alg = td3('logs')
             assert alg.load() == 1000

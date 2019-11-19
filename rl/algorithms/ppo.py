@@ -55,8 +55,7 @@ class PPO(Algorithm):
                  clip_param=0.2,
                  eval_num_episodes=1,
                  record_num_episodes=1,
-                 gpu=True,
-                 **kwargs):
+                 gpu=True):
         """Init."""
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))

@@ -12,7 +12,6 @@ train.maxseconds = None
 DQN.env_fn = @make_atari_env
 DQN.qf_fn = @nature_dqn_fn
 DQN.nenv = 1
-DQN.norm_observations = False
 DQN.eval_num_episodes = 20
 DQN.record_num_episodes = 5
 DQN.gpu = True

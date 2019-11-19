@@ -25,6 +25,7 @@ class PrioritizedReplayDQN(DoubleDQN):
         """Init."""
         super().__init__(logdir, **kwargs)
         self.buffer = PrioritizedReplayBuffer(self.buffer, alpha=replay_alpha)
+        self.data_manager.buffer = self.buffer
         self.beta_schedule = LinearSchedule(t_beta_max, 1.0, replay_beta)
 
     def _get_batch(self):

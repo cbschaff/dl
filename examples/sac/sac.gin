@@ -14,7 +14,6 @@ SAC.policy_fn = @policy_fn
 SAC.qf_fn = @qf_fn
 SAC.vf_fn = @vf_fn
 SAC.nenv = 1
-SAC.norm_observations = True
 SAC.eval_num_episodes = 20
 SAC.record_num_episodes = 5
 SAC.buffer_size = 10000

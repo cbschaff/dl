@@ -13,7 +13,6 @@ TD3.env_fn = @make_env
 TD3.policy_fn = @policy_fn
 TD3.qf_fn = @qf_fn
 TD3.nenv = 1
-TD3.norm_observations = True
 TD3.eval_num_episodes = 20
 TD3.gpu = True
 TD3.record_num_episodes = 5

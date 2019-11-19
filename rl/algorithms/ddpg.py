@@ -116,8 +116,7 @@ class DDPG(Algorithm):
                  gpu=True,
                  eval_num_episodes=1,
                  record_num_episodes=1,
-                 log_period=1000,
-                 **kwargs):
+                 log_period=1000):
         """Init."""
         self.logdir = logdir
         self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))

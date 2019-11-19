@@ -13,7 +13,6 @@ DDPG.env_fn = @make_env
 DDPG.policy_fn = @policy_fn
 DDPG.qf_fn = @qf_fn
 DDPG.nenv = 1
-DDPG.norm_observations = True
 DDPG.eval_num_episodes = 20
 DDPG.record_num_episodes = 5
 DDPG.gpu = True
