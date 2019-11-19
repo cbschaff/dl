@@ -1,1 +1,1 @@
-python -m dl.train logs ./dqn.gin -b "train.Trainer=@DoubleDQN"
+python -m dl.main logs ./dqn.gin -b "train.algorithm=@DoubleDQN"

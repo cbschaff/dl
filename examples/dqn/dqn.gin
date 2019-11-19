@@ -1,21 +1,13 @@
 # Hyperparameters from Minh et al. 2015: https://www.nature.com/articles/nature14236
 import dl.examples.dqn
 
-train.Trainer = @DQN
-
-optim.RMSprop.lr = 0.00025
-optim.RMSprop.alpha = 0.95
-optim.RMSprop.centered = True
-optim.RMSprop.momentum = 0.
-optim.RMSprop.eps = 0.00001
-
-DQN.maxt = 10000000
-DQN.seed = 0
-DQN.eval = True
-DQN.eval_period = 1000000
-DQN.save_period = 1000000
-DQN.maxseconds = None
-DQN.gpu = True
+train.algorithm = @DQN
+train.maxt = 10000000
+train.seed = 0
+train.eval = True
+train.eval_period = 1000000
+train.save_period = 1000000
+train.maxseconds = None
 
 DQN.env_fn = @make_atari_env
 DQN.qf_fn = @nature_dqn_fn
@@ -23,12 +15,11 @@ DQN.nenv = 1
 DQN.norm_observations = False
 DQN.eval_num_episodes = 20
 DQN.record_num_episodes = 5
-
+DQN.gpu = True
 DQN.buffer_size = 1000000
 DQN.frame_stack = 4
 DQN.learning_starts = 50000
 DQN.update_period = 4
-
 DQN.optimizer = @optim.RMSprop
 DQN.gamma = 0.99
 DQN.huber_loss = True
@@ -41,6 +32,12 @@ DQN.log_period = 10
 
 Checkpointer.ckpt_period = 1000000
 
+optim.RMSprop.lr = 0.00025
+optim.RMSprop.alpha = 0.95
+optim.RMSprop.centered = True
+optim.RMSprop.momentum = 0.
+optim.RMSprop.eps = 0.00001
+
 make_atari_env.game_name = "Breakout"
 make_atari_env.sticky_actions = False
 make_atari_env.noop = True
@@ -48,13 +45,6 @@ make_atari_env.seed = 0
 make_atari_env.frameskip = 4
 make_atari_env.episode_life = False
 make_atari_env.clip_rewards = True
+make_atari_env.timelimit = True
+make_atari_env.scale = False
 make_atari_env.frame_stack = 1
-
-
-
-ObsNorm.steps = 10000
-ObsNorm.mean = None
-ObsNorm.std = None
-ObsNorm.eps = 1e-2
-ObsNorm.log = True
-ObsNorm.log_prob = 0.01

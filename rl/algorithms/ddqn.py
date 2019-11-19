@@ -3,7 +3,7 @@
 https://arxiv.org/abs/1509.06461
 """
 
-from dl.rl.trainers import DQN
+from dl.rl.algorithms import DQN
 import gin
 
 

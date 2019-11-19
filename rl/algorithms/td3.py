@@ -8,14 +8,15 @@ This algorithm improves on DDPG by adding:
 - Delay policy updates to have better value estimates
 """
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl import logger, nest, Algorithm
+from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.envs import VecFrameStack
+from dl.rl.util import rl_evaluate, rl_record, misc
+from dl.rl.envs import VecFrameStack, VecEpisodeLogger
 
 
 def soft_target_update(target_net, net, tau):
@@ -71,6 +72,7 @@ class TD3(Algorithm):
                  env_fn,
                  policy_fn,
                  qf_fn,
+                 nenv=1,
                  optimizer=torch.optim.Adam,
                  buffer_size=int(1e6),
                  frame_stack=1,
@@ -85,10 +87,18 @@ class TD3(Algorithm):
                  exploration_noise=0.1,
                  policy_noise=0.2,
                  policy_noise_clip=0.5,
+                 gpu=True,
+                 eval_num_episodes=1,
+                 record_num_episodes=1,
                  log_period=1000,
                  **kwargs):
         """Init."""
-        super().__init__(logdir, env_fn, **kwargs)
+        self.logdir = logdir
+        self.ckptr = Checkpointer(os.path.join(logdir, 'ckpts'))
+        self.env_fn = env_fn
+        self.nenv = nenv
+        self.eval_num_episodes = eval_num_episodes
+        self.record_num_episodes = record_num_episodes
         self.gamma = gamma
         self.buffer_size = buffer_size
         self.batch_size = batch_size
@@ -107,8 +117,12 @@ class TD3(Algorithm):
         self.policy_noise_clip = policy_noise_clip
         self.log_period = log_period
 
+        self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
+                                   else 'cpu')
+
         self.policy_fn = policy_fn
         self.qf_fn = qf_fn
+        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
         eval_env = VecFrameStack(self.env, self.frame_stack)
         self.pi = policy_fn(eval_env)
         self.qf1 = qf_fn(eval_env)
@@ -151,30 +165,7 @@ class TD3(Algorithm):
         self.low = torch.from_numpy(self.env.action_space.low).to(self.device)
         self.high = torch.from_numpy(self.env.action_space.high).to(self.device)
 
-    def state_dict(self):
-        """State dict."""
-        return {
-            'pi': self.pi.state_dict(),
-            'qf1': self.qf1.state_dict(),
-            'qf2': self.qf2.state_dict(),
-            'target_pi': self.target_pi.state_dict(),
-            'target_qf1': self.target_qf1.state_dict(),
-            'target_qf2': self.target_qf2.state_dict(),
-            'opt_pi': self.opt_pi.state_dict(),
-            'opt_qf': self.opt_qf.state_dict(),
-            }
-
-    def load_state_dict(self, state_dict):
-        """Load state dict."""
-        self.pi.load_state_dict(state_dict['pi'])
-        self.qf1.load_state_dict(state_dict['qf1'])
-        self.qf2.load_state_dict(state_dict['qf2'])
-        self.target_pi.load_state_dict(state_dict['target_pi'])
-        self.target_qf1.load_state_dict(state_dict['target_qf1'])
-        self.target_qf2.load_state_dict(state_dict['target_qf2'])
-
-        self.opt_pi.load_state_dict(state_dict['opt_pi'])
-        self.opt_qf.load_state_dict(state_dict['opt_qf'])
+        self.t = 0
 
     def _norm_actions(self, ac):
         if self.low is not None and self.high is not None:
@@ -243,45 +234,104 @@ class TD3(Algorithm):
                                self.target_smoothing_coef)
             soft_target_update(self.target_qf2, self.qf2,
                                self.target_smoothing_coef)
+        return self.t
 
     def evaluate(self):
         """Evaluate."""
         eval_env = VecFrameStack(self.env, self.frame_stack)
-        self.rl_evaluate(eval_env, self.pi)
-        self.rl_record(eval_env, self.pi)
-        if self.data_manager:
-            self.data_manager.manual_reset()
+        self.pi.eval()
+        misc.set_env_to_eval_mode(eval_env)
 
-    def _save(self, state_dict):
+        # Eval policy
+        os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'eval',
+                               self.ckptr.format.format(self.t) + '.json')
+        stats = rl_evaluate(eval_env, self.pi, self.eval_num_episodes,
+                            outfile, self.device)
+        logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
+                          self.t, time.time())
+        logger.add_scalar('eval/mean_episode_length', stats['mean_length'],
+                          self.t, time.time())
+
+        # Record policy
+        os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
+        outfile = os.path.join(self.logdir, 'video',
+                               self.ckptr.format.format(self.t) + '.mp4')
+        rl_record(eval_env, self.pi, self.record_num_episodes, outfile,
+                  self.device)
+
+        self.pi.train()
+        misc.set_env_to_train_mode(self.env)
+        self.data_manager.manual_reset()
+
+    def save(self):
+        """Save."""
+        state_dict = {
+            'pi': self.pi.state_dict(),
+            'qf1': self.qf1.state_dict(),
+            'qf2': self.qf2.state_dict(),
+            'target_pi': self.target_pi.state_dict(),
+            'target_qf1': self.target_qf1.state_dict(),
+            'target_qf2': self.target_qf2.state_dict(),
+            'opt_pi': self.opt_pi.state_dict(),
+            'opt_qf': self.opt_qf.state_dict(),
+            'env': misc.env_state_dict(self.env),
+            't': self.t
+        }
+        buffer_dict = self.buffer.state_dict()
+        state_dict['buffer_format'] = nest.get_structure(buffer_dict)
+        self.ckptr.save(state_dict, self.t)
+
         # save buffer seperately and only once (because it can be huge)
-        buffer_dict = self.buffer.state_dict()
         np.savez(os.path.join(self.ckptr.ckptdir, 'buffer.npz'),
-                 *nest.flatten(buffer_dict))
-        super()._save(state_dict)
+                 **{f'{i:04d}': x for i, x in
+                    enumerate(nest.flatten(buffer_dict))})
 
-    def _load(self, state_dict):
-        super()._load(state_dict)
-        # initialize data format of buffer if needed.
-        self.data_manager.env_step_and_store_transition()
-        buffer_dict = self.buffer.state_dict()
+    def load(self, t=None):
+        """Load."""
+        state_dict = self.ckptr.load(t)
+        if state_dict is None:
+            self.t = 0
+            return self.t
+        self.pi.load_state_dict(state_dict['pi'])
+        self.qf1.load_state_dict(state_dict['qf1'])
+        self.qf2.load_state_dict(state_dict['qf2'])
+        self.target_pi.load_state_dict(state_dict['target_pi'])
+        self.target_qf1.load_state_dict(state_dict['target_qf1'])
+        self.target_qf2.load_state_dict(state_dict['target_qf2'])
+        self.opt_pi.load_state_dict(state_dict['opt_pi'])
+        self.opt_qf.load_state_dict(state_dict['opt_qf'])
+        misc.env_load_state_dict(self.env, state_dict['env'])
+        self.t = state_dict['t']
+
+        buffer_format = state_dict['buffer_format']
         buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
                                                  'buffer.npz')))
         buffer_state = nest.flatten(buffer_state)
         self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
-                                                          buffer_dict))
-        if self.data_manager:
-            self.data_manager.manual_reset()
+                                                          buffer_format))
+        self.data_manager.manual_reset()
+        return self.t
+
+    def close(self):
+        """Close environment."""
+        try:
+            self.env.close()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
     import unittest
     import shutil
+    from dl import train
     from dl.rl.envs import make_env
     from dl.rl.modules import QFunction
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
     from dl.rl.modules import UnnormActionPolicy
     from dl.modules import Delta
     import torch.nn.functional as F
+    from functools import partial
 
     class PiBase(PolicyBase):
         """Policy network."""
@@ -318,9 +368,9 @@ if __name__ == '__main__':
             x = F.relu(self.fc3(x))
             return self.qvalue(x)
 
-    def env_fn(rank):
+    def env_fn(nenv):
         """Environment function."""
-        return make_env('LunarLanderContinuous-v2', rank=rank)
+        return make_env('LunarLanderContinuous-v2', nenv=nenv)
 
     def policy_fn(env):
         """Create a policy."""
@@ -336,19 +386,20 @@ if __name__ == '__main__':
 
         def test_sac(self):
             """Test."""
-            td3 = TD3('logs',
-                      env_fn,
-                      policy_fn,
-                      qf_fn,
-                      learning_starts=300,
-                      eval_num_episodes=1,
-                      buffer_size=500,
-                      policy_update_period=2,
-                      maxt=1000,
-                      eval=False,
-                      eval_period=1000)
-            td3.train()
-            td3.load()
+            td3 = partial(TD3,
+                          env_fn=env_fn,
+                          policy_fn=policy_fn,
+                          qf_fn=qf_fn,
+                          learning_starts=300,
+                          eval_num_episodes=1,
+                          buffer_size=500,
+                          policy_update_period=2,
+                          maxt=1000,
+                          eval=False,
+                          eval_period=1000)
+            train('logs', td3, maxt=1000, eval=False, eval_period=1000)
+            alg = td3('logs')
+            assert alg.load() == 1000
             shutil.rmtree('logs')
 
     unittest.main()
