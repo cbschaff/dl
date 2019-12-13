@@ -90,6 +90,9 @@ class DummyVecEnv(VecEnv):
 
     def load_state_dict(self, state_dict):
         for e, state in zip(self.envs, state_dict['env_states']):
+            if isinstance(state, list):
+                # this could happen if the state was saved with a subproc env
+                state = state[0]
             env_load_state_dict(e, state)
 
 

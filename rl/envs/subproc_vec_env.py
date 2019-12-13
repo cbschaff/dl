@@ -45,6 +45,15 @@ def worker(remote, parent_remote, env_fn_wrappers):
                 raise NotImplementedError
     except KeyboardInterrupt:
         print('SubprocVecEnv worker: got KeyboardInterrupt')
+        # allow main process to save state if needed.
+        for _ in range(2):
+            cmd, data = remote.recv()
+            if cmd == 'get_rng':
+                remote.send(rng.get_state())
+            elif cmd == 'get_state':
+                remote.send([env_state_dict(env) for env in envs])
+            else:
+                break
     finally:
         for env in envs:
             env.close()
