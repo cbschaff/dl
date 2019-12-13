@@ -3,9 +3,9 @@ import baselines.common.atari_wrappers as atari_wrappers
 from dl.rl.envs.logging_wrappers import EpisodeInfo
 from dl.rl.envs.misc_wrappers import ImageTranspose
 from dl.rl.envs import VecFrameStack
-from dl.rl.envs import VecEpisodeLogger, VecObsNormWrapper
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from dl.rl.envs import VecObsNormWrapper
+from dl.rl.envs import SubprocVecEnv
+from dl.rl.envs import DummyVecEnv
 import gin
 import gym
 

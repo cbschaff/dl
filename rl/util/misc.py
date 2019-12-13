@@ -97,15 +97,17 @@ def set_env_to_train_mode(env):
         set_env_to_train_mode(env.env)
 
 
-def env_state_dict(env, state_dict={}, ind=0):
-    """Gather the state of env and all its wrappers into one dict."""
-    if hasattr(env, 'state_dict'):
-        state_dict[ind] = env.state_dict()
-    if hasattr(env, 'venv'):
-        state_dict = env_state_dict(env.venv, state_dict, ind+1)
-    elif hasattr(env, 'env'):
-        state_dict = env_state_dict(env.env, state_dict, ind+1)
-    return state_dict
+def env_state_dict(env):
+    def _env_state_dict(env, state_dict, ind):
+        """Gather the state of env and all its wrappers into one dict."""
+        if hasattr(env, 'state_dict'):
+            state_dict[ind] = env.state_dict()
+        if hasattr(env, 'venv'):
+            state_dict = _env_state_dict(env.venv, state_dict, ind+1)
+        elif hasattr(env, 'env'):
+            state_dict = _env_state_dict(env.env, state_dict, ind+1)
+        return state_dict
+    return _env_state_dict(env, {}, 0)
 
 
 def env_load_state_dict(env, state_dict, ind=0):
