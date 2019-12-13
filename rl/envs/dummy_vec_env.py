@@ -88,9 +88,9 @@ class DummyVecEnv(VecEnv):
             env_states.append(env_state_dict(e))
         return {'env_states': env_states}
 
-    # def load_state_dict(self, state_dict):
-    #     for e, state in zip(self.envs, state_dict['env_states']):
-    #         env_load_state_dict(e, state)
+    def load_state_dict(self, state_dict):
+        for e, state in zip(self.envs, state_dict['env_states']):
+            env_load_state_dict(e, state)
 
 
 if __name__ == "__main__":
