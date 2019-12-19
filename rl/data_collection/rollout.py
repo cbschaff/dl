@@ -16,25 +16,21 @@ class RolloutStorage(object):
 
     Data is provided by passing a dictionary to the 'insert(data)' method.
     The data dictionary must have the keys:
-        'obs', 'action', 'reward', 'mask', and 'vpred'
-    If the recurrent flag is set to True, the 'state' key must also exist.
+        'obs', 'action', 'reward', 'done', and 'vpred'
     Any amount of additional data can be provided.
 
-    The data with 'obs' and 'state' keys may be arbitrarily nested torch
+    The data with 'obs' keys may be arbitrarily nested torch
     tensors. All other data is assumed to be a single torch tensor.
 
     Once all rollout data has been stored, it can be batched and iterated over
     by calling the 'sampler(batch_size)' method.
     """
 
-    def __init__(self, num_steps, num_processes, device='cpu', recurrent=False):
+    def __init__(self, num_processes, num_steps, device='cpu'):
         """Init."""
-        self.num_steps = num_steps
         self.num_processes = num_processes
-        self.recurrent = recurrent
-        self.required_keys = ['obs', 'action', 'reward', 'mask', 'vpred']
-        if recurrent:
-            self.required_keys.append('state')
+        self.num_steps = num_steps
+        self.required_keys = ['obs', 'action', 'reward', 'done', 'vpred']
         self.keys = None
         self.data = None
         self.device = device
@@ -49,7 +45,7 @@ class RolloutStorage(object):
         self.data = {}
         if step_data['reward'].shape != step_data['vpred'].shape:
             raise ValueError('reward and vpred must have the same shape!')
-        if step_data['reward'].shape != step_data['mask'].shape:
+        if step_data['reward'].shape != step_data['done'].shape:
             raise ValueError('reward and mask must have the same shape!')
 
         def _make_storage(arr, recurrent_key=False):
@@ -61,16 +57,7 @@ class RolloutStorage(object):
 
         for k in self.keys:
             if k == 'obs':
-                self.data['obs'] = nest.map_structure(_make_storage,
-                                                      step_data['obs'])
-            elif k == 'state':
-                if not self.recurrent:
-                    raise ValueError("The 'state' key is reserved for storing "
-                                     "the recurrent state of a model. To store "
-                                     "recurrent states, set recurrent=True "
-                                     "when constructing the RolloutStorage.")
-                f = partial(_make_storage, recurrent_key=True)
-                self.data['state'] = nest.map_structure(f, step_data['state'])
+                self.data[k] = nest.map_structure(_make_storage, step_data[k])
             else:
                 self.data[k] = _make_storage(step_data[k])
         self.data['vtarg'] = _make_storage(step_data['vpred'])

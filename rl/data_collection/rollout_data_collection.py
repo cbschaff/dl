@@ -135,20 +135,6 @@ class RolloutDataManager(object):
         """Create sampler to iterate over rollout data."""
         return self.storage.sampler(self.batch_size)
 
-    def act(self, ob, state_in=None, mask=None):
-        """Run the model to produce an action.
-
-        Overwrite this method in subclasses.
-
-        Returns:
-            out: namedtuple output of Policy or QFunction
-            data: dict containing addition data to store in RolloutStorage.
-                  The keys should match 'other_keys' given to
-                  init_rollout_storage().
-
-        """
-        raise NotImplementedError
-
 
 if __name__ == '__main__':
     import unittest
