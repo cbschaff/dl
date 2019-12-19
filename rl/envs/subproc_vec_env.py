@@ -9,18 +9,15 @@ from dl.rl import env_state_dict, env_load_state_dict
 
 
 def worker(remote, parent_remote, env_fn_wrappers):
+    def step_env(env, action):
+        ob, reward, done, info = env.step(action)
+        if done:
+            ob = env.reset()
+        return ob, reward, done, info
+
     parent_remote.close()
     rng.seed(0)
     envs = [env_fn_wrapper() for env_fn_wrapper in env_fn_wrappers.x]
-
-    dones = {e: False for e in envs}
-
-    def step_env(env, action):
-        if dones[env]:
-            return None
-        ob, reward, done, info = env.step(action)
-        dones[env] = done
-        return ob, reward, done, info
     try:
         while True:
             cmd, data = remote.recv()
