@@ -56,6 +56,8 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
         A dict of episode stats
 
     """
+    if nepisodes == 0:
+        return
     env = ensure_vec_env(env)
     ep_lengths = []
     ep_rewards = []
@@ -111,6 +113,8 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         A dict of episode stats
 
     """
+    if nepisodes == 0:
+        return
     env = ensure_vec_env(env)
     tmpdir = os.path.join(tempfile.gettempdir(),
                           'video_' + str(time.monotonic()))
