@@ -46,14 +46,19 @@ def worker(remote, parent_remote, env_fn_wrappers):
     except KeyboardInterrupt:
         print('SubprocVecEnv worker: got KeyboardInterrupt')
         # allow main process to save state if needed.
+        count = 0.
         for _ in range(2):
             cmd, data = remote.recv()
             if cmd == 'get_rng':
                 remote.send(rng.get_state())
             elif cmd == 'get_state':
                 remote.send([env_state_dict(env) for env in envs])
+            elif count == 0:
+                count += 1
+                continue
             else:
                 break
+
     finally:
         for env in envs:
             env.close()
