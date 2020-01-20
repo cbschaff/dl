@@ -98,8 +98,7 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
     if save_info:
         outs['info'] = all_infos
     if outfile:
-        with open(outfile, 'w') as f:
-            json.dump(outs, f)
+        torch.save(outs, outfile)
     return outs
 
 
@@ -187,8 +186,7 @@ if __name__ == '__main__':
                 return namedtuple('test', ['action', 'state_out'])(
                     action=ac, state_out=None)
 
-            stats = rl_evaluate(env, actor, 10, outfile='./out.json',
-                                save_info=True)
+            stats = rl_evaluate(env, actor, 10, outfile='./out.pt')
             assert len(stats['episode_lengths']) >= 10
             assert len(stats['episode_rewards']) >= 10
             assert len(stats['episode_rewards']) == len(
@@ -196,7 +194,7 @@ if __name__ == '__main__':
             assert np.mean(stats['episode_lengths']) == stats['mean_length']
             assert np.mean(stats['episode_rewards']) == stats['mean_reward']
             env.close()
-            os.remove('./out.json')
+            os.remove('./out.pt')
 
         def test_record(self):
             """Test record."""
