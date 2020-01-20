@@ -40,7 +40,8 @@ class Actor(object):
         return out.action.cpu().numpy()
 
 
-def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
+def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
+                save_info=False):
     """Compute episode stats for an environment and actor.
 
     If the environment has an EpisodeInfo Wrapper, rl_record will use that
@@ -52,6 +53,7 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
         nepisodes: The number of episodes to run.
         outfile: Where to save results (if provided)
         device: The device which contains the actor.
+        save_info: Save the info dict with results.
     Returns:
         A dict of episode stats
 
@@ -64,12 +66,15 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
     obs = env.reset()
     lengths = np.zeros(env.num_envs, dtype=np.int32)
     rewards = np.zeros(env.num_envs, dtype=np.float32)
+    all_infos = []
     dones = None
     actor = Actor(actor, device)
     while len(ep_lengths) < nepisodes:
         obs, rs, dones, infos = env.step(actor(obs, dones))
         rewards += rs
         lengths += 1
+        if save_info:
+            all_infos.append(infos)
         for i, done in enumerate(dones):
             if 'episode_info' in infos[i]:
                 if infos[i]['episode_info']['done']:
@@ -90,6 +95,8 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu'):
         'mean_length': np.mean(ep_lengths),
         'mean_reward': np.mean(ep_rewards),
     }
+    if save_info:
+        outs['info'] = all_infos
     if outfile:
         with open(outfile, 'w') as f:
             json.dump(outs, f)
@@ -180,7 +187,8 @@ if __name__ == '__main__':
                 return namedtuple('test', ['action', 'state_out'])(
                     action=ac, state_out=None)
 
-            stats = rl_evaluate(env, actor, 10, outfile='./out.json')
+            stats = rl_evaluate(env, actor, 10, outfile='./out.json',
+                                save_info=True)
             assert len(stats['episode_lengths']) >= 10
             assert len(stats['episode_rewards']) >= 10
             assert len(stats['episode_rewards']) == len(
