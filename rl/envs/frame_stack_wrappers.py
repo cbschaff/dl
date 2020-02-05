@@ -58,9 +58,16 @@ class VecFrameStack(VecEnvWrapper):
         """Step."""
         ob, reward, done, info = self.venv.step(action)
 
+        def _zero_frames(frames):
+            for i, d in enumerate(done):
+                if d:
+                    frames[i] = 0
+            return frames
+
         def _add_ob(item):
             return self._add_new_observation(*item)
 
+        self.frames = nest.map_structure(_zero_frames, self.frames)
         self.frames = nest.map_structure(_add_ob,
                                          nest.zip_structure(self.frames, ob))
         ob = nest.map_structure(lambda x: x.copy(), self.frames)
@@ -73,13 +80,12 @@ class VecFrameStack(VecEnvWrapper):
 
 if __name__ == '__main__':
     import unittest
-    from dl.rl.envs import VecEpisodeLogger, make_atari_env
+    from dl.rl.envs import make_atari_env
     from baselines.common.vec_env import VecEnvWrapper
 
     def make_env(nenv):
         """Create a training environment."""
-        env = make_atari_env("Pong", nenv)
-        return VecEpisodeLogger(env)
+        return make_atari_env("Pong", nenv)
 
     class NestedVecObWrapper(VecEnvWrapper):
         """Nest observations."""
@@ -114,6 +120,16 @@ if __name__ == '__main__':
             ob, _, _, _ = env.step([env.action_space.sample()
                                     for _ in range(nenv)])
             assert ob.shape == (nenv, 4*s[0], s[1], s[2])
+            while True:
+                ob, _, done, _ = env.step([env.action_space.sample()
+                                           for _ in range(nenv)])
+                assert ob.shape == (nenv, 4*s[0], s[1], s[2])
+
+                for i, d in enumerate(done):
+                    if d:
+                        assert np.allclose(ob[i, :-1], 0)
+                if np.any(done):
+                    break
 
         def test_nested_vec_frame_stack(self):
             """Test vec frame stack wrapper."""
@@ -128,11 +144,21 @@ if __name__ == '__main__':
             assert ob[0][1].shape == (nenv, 4*s[0], s[1], s[2])
             assert ob[1][0].shape == (nenv, 4*s[0], s[1], s[2])
             assert ob[1][1].shape == (nenv, 4*s[0], s[1], s[2])
-            ob, _, _, _ = env.step([env.action_space.sample()
-                                    for _ in range(nenv)])
-            assert ob[0][0].shape == (nenv, 4*s[0], s[1], s[2])
-            assert ob[0][1].shape == (nenv, 4*s[0], s[1], s[2])
-            assert ob[1][0].shape == (nenv, 4*s[0], s[1], s[2])
-            assert ob[1][1].shape == (nenv, 4*s[0], s[1], s[2])
+            while True:
+                ob, _, done, _ = env.step([env.action_space.sample()
+                                           for _ in range(nenv)])
+                assert ob[0][0].shape == (nenv, 4*s[0], s[1], s[2])
+                assert ob[0][1].shape == (nenv, 4*s[0], s[1], s[2])
+                assert ob[1][0].shape == (nenv, 4*s[0], s[1], s[2])
+                assert ob[1][1].shape == (nenv, 4*s[0], s[1], s[2])
+
+                for i, d in enumerate(done):
+                    if d:
+                        assert np.allclose(ob[0][0][i, :-1], 0)
+                        assert np.allclose(ob[1][0][i, :-1], 0)
+                        assert np.allclose(ob[0][1][i, :-1], 0)
+                        assert np.allclose(ob[1][1][i, :-1], 0)
+                if np.any(done):
+                    break
 
     unittest.main()

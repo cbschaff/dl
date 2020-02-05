@@ -1,9 +1,10 @@
 """Define networks for PPO experiments."""
 from dl.rl.modules import ActorCriticBase, Policy
 from dl.rl.util import conv_out_shape
-from dl.modules import Categorical, MaskedLSTM, TimeAndBatchUnflattener
+from dl.modules import Categorical
 import torch.nn.functional as F
 import torch.nn as nn
+from torch.nn.utils.rnn import PackedSequence
 import numpy as np
 import gin
 
@@ -46,25 +47,36 @@ class A3CRNN(ActorCriticBase):
             shape = conv_out_shape(shape, c)
         self.nunits = 32 * np.prod(shape)
         self.fc = nn.Linear(self.nunits, 256)
-        self.lstm = MaskedLSTM(256, 256, 1)
-        self.tbf = TimeAndBatchUnflattener()
+        self.lstm = nn.LSTM(256, 256, 1)
         self.vf = nn.Linear(256, 1)
         self.dist = Categorical(256, self.action_space.n)
         nn.init.orthogonal_(self.vf.weight.data, gain=1.0)
         nn.init.constant_(self.vf.bias.data, 0)
 
-    def forward(self, x, state_in=None, mask=None):
+    def forward(self, ob, state_in=None, mask=None):
         """Forward."""
+        if isinstance(ob, PackedSequence):
+            x = ob.data
+        else:
+            x = ob
         x = (x.float() / 128.) - 1.
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.fc(x.view(-1, self.nunits)))
-        if state_in is None:
-            x, state_out = self.lstm(self.tbf(x))
+        if isinstance(ob, PackedSequence):
+            x = PackedSequence(x, batch_sizes=ob.batch_sizes,
+                               sorted_indices=ob.sorted_indices,
+                               unsorted_indices=ob.unsorted_indices)
         else:
-            mask = self.tbf(mask, state_in[0])
-            x, state_out = self.lstm(self.tbf(x, state_in[0]), state_in, mask)
-        x = self.tbf.flatten(x)
+            x = x.unsqueeze(0)
+        if state_in is None:
+            x, state_out = self.lstm(x)
+        else:
+            x, state_out = self.lstm(x, state_in)
+        if isinstance(x, PackedSequence):
+            x = x.data
+        else:
+            x = x.squeeze(0)
         return self.dist(x), self.vf(x), state_out
 
 

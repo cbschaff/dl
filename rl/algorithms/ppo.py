@@ -43,7 +43,6 @@ class PPO(Algorithm):
                  policy_fn,
                  nenv=1,
                  optimizer=torch.optim.Adam,
-                 rollout_length=128,
                  batch_size=32,
                  gamma=0.99,
                  lambda_=0.95,
@@ -79,7 +78,6 @@ class PPO(Algorithm):
             self.env,
             PPOActor(self.pi),
             self.device,
-            rollout_length=rollout_length,
             batch_size=batch_size,
             gamma=gamma,
             lambda_=lambda_,
@@ -91,10 +89,7 @@ class PPO(Algorithm):
 
     def loss(self, batch):
         """Compute loss."""
-        if self.data_manager.recurrent:
-            outs = self.pi(batch['obs'], batch['state'], batch['mask'])
-        else:
-            outs = self.pi(batch['obs'])
+        outs = self.pi(batch['obs'])
         loss = {}
 
         # compute policy loss
@@ -128,8 +123,7 @@ class PPO(Algorithm):
     def step(self):
         """Compute rollout, loss, and update model."""
         self.pi.train()
-        self.data_manager.rollout()
-        self.t += self.data_manager.rollout_length * self.nenv
+        self.t += self.data_manager.rollout()
         losses = {}
         for _ in range(self.epochs_per_rollout):
             for batch in self.data_manager.sampler():

@@ -1,4 +1,4 @@
-"""Adapt SubprocVecEnv to save environment state."""
+"""Adapt SubprocVecEnv to save environment state. Adapted from OpenAI Baselines."""
 
 import numpy as np
 from baselines.common.vec_env import VecEnv
@@ -46,13 +46,11 @@ class DummyVecEnv(VecEnv):
 
     def step_wait(self):
         for e in range(self.num_envs):
+            if self.buf_dones[e]:
+                continue
             action = self.actions[e]
-            # if isinstance(self.envs[e].action_space, spaces.Discrete):
-            #    action = int(action)
 
             obs, self.buf_rews[e], self.buf_dones[e], self.buf_infos[e] = self.envs[e].step(action)
-            if self.buf_dones[e]:
-                obs = self.envs[e].reset()
             self._save_obs(e, obs)
         return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones),
                 self.buf_infos.copy())
@@ -61,6 +59,7 @@ class DummyVecEnv(VecEnv):
         for e in range(self.num_envs):
             obs = self.envs[e].reset()
             self._save_obs(e, obs)
+        self.buf_dones[:] = False
         return self._obs_from_buf()
 
     def _save_obs(self, e, obs):
@@ -125,8 +124,8 @@ if __name__ == "__main__":
             return _thunk
         return DummyVecEnv([_env(i) for i in range(nenv)])
 
-    class TestSubprocVecEnv(unittest.TestCase):
-        """Test SubprocVecEnv"""
+    class TestDummyVecEnv(unittest.TestCase):
+        """Test DummyVecEnv"""
 
         def test(self):
             nenv = 4
@@ -160,5 +159,18 @@ if __name__ == "__main__":
                 assert np.allclose(ob, ob3)
                 assert np.allclose(r, r3)
                 assert np.allclose(done, done3)
+
+            dones = [False for _ in range(nenv)]
+            obs = [None for _ in range(nenv)]
+            while not np.all(dones):
+                actions = [env.action_space.sample() for _ in range(nenv)]
+                ob, r, new_dones, _ = env.step(actions)
+                for e, d in enumerate(new_dones):
+                    if dones[e]:
+                        assert d
+                        assert np.allclose(ob[e], obs[e])
+                    obs[e] = ob[e]
+                dones = new_dones
+
 
     unittest.main()
