@@ -164,6 +164,7 @@ if __name__ == '__main__':
             nenv = 10
             env = make_env('CartPole-v1', nenv)
             env = VecObsNormWrapper(env, log_prob=1.)
+            print(env.observation_space)
             env.reset()
             assert env.t == 0
             for _ in range(100):
@@ -197,6 +198,7 @@ if __name__ == '__main__':
             env = NestedVecObWrapper(env)
             env = NestedVecObWrapper(env)
             env = VecObsNormWrapper(env, log_prob=1.)
+            print(env.observation_space)
             env.reset()
             assert env.t == 0
             for _ in range(100):

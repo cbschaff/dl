@@ -1,4 +1,4 @@
-"""Util for nested lists, tuple, and dictionaries of python objects."""
+"""Util for nested lists, tuples, and dictionaries of python objects."""
 
 
 class NestTupleItem(tuple):
@@ -7,9 +7,17 @@ class NestTupleItem(tuple):
     pass
 
 
+ITEMS = (NestTupleItem, )
+
+
+def add_item_class(cls):
+    global ITEMS
+    ITEMS = tuple(list(ITEMS) + [cls])
+
+
 def is_item(nest):
     """Check if a nest consists of a single item with no structure."""
-    if isinstance(nest, NestTupleItem):
+    if isinstance(nest, ITEMS):
         return True
     return not isinstance(nest, (list, tuple, dict))
 

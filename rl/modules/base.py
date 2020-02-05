@@ -44,14 +44,12 @@ class ContinuousQFunctionBase(RLBase):
 class PolicyBase(RLBase):
     """Policy Interface."""
 
-    def forward(self, ob, state_in=None, mask=None):
+    def forward(self, ob, state_in=None):
         """Forward.
 
         Args:
             ob: Observation,
             state_in: Hidden_states for recurrent policies
-            mask: A boolean mask for hidden states.
-                  (hidden states should be masked when episodes end)
         Returns:
             dist: Action distribution,
             state_out: next hidden states of the model (optional)
@@ -63,14 +61,12 @@ class PolicyBase(RLBase):
 class ActorCriticBase(RLBase):
     """Actor Critic interface."""
 
-    def forward(self, ob, state_in=None, mask=None):
+    def forward(self, ob, state_in=None):
         """forward.
 
         Args:
             ob: Observation,
             state_in: Hidden_states for recurrent policies
-            mask: A boolean mask for hidden states.
-                  (hidden states should be masked when episodes end)
         Returns:
             dist: Action distribution,
             value: The value of ob,

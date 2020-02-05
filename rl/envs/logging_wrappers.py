@@ -58,23 +58,30 @@ class VecEpisodeLogger(VecEnvWrapper):
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
         self._eval = False
+        self._dones = [False for _ in range(self.num_envs)]
 
     def reset(self):
         """Reset."""
         obs = self.venv.reset()
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
+        self._dones = [False for _ in range(self.num_envs)]
         return obs
 
     def step(self, action):
         """Step."""
         obs, rews, dones, infos = self.venv.step(action)
         if not self._eval:
-            self.t += self.num_envs
-        self.lens += 1
-        self.rews += rews
+            x = np.logical_and(self._dones, dones)
+            self.t += np.sum(np.logical_not(x))
+        for i, d in enumerate(self._dones):  # handle synced resets
+            if not d:
+                self.lens[i] += 1
+                self.rews[i] += rews[i]
+            else:
+                assert dones[i]
         for i, done in enumerate(dones):
-            if done:
+            if done and not self._dones[i]:
                 if not self._eval:
                     logger.add_scalar('env/episode_length', self.lens[i],
                                       self.t, time.time())
@@ -84,13 +91,14 @@ class VecEpisodeLogger(VecEnvWrapper):
                 self.rews[i] = 0.
         # log unwrapped episode stats if they exist
         if 'episode_info' in infos[0]:
-            for info in infos:
+            for i, info in enumerate(infos):
                 epinfo = info['episode_info']
-                if epinfo['done'] and not self._eval:
+                if epinfo['done'] and not self._eval and not self._dones[i]:
                     logger.add_scalar('env/unwrapped_episode_length',
                                       epinfo['length'], self.t, time.time())
                     logger.add_scalar('env/unwrapped_episode_reward',
                                       epinfo['reward'], self.t, time.time())
+        self._dones = dones
 
         return obs, rews, dones, infos
 
@@ -124,7 +132,7 @@ class VecEpisodeLogger(VecEnvWrapper):
 if __name__ == '__main__':
     import unittest
     import shutil
-    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+    from dl.rl.envs import SubprocVecEnv
     import gym
 
     class Test(unittest.TestCase):

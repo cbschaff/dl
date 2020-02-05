@@ -15,9 +15,10 @@ class UnnormActionPolicy(Policy):
     def __init__(self, *args, **kwargs):
         """Init."""
         super().__init__(*args, **kwargs)
-        self._outputs_normed = namedtuple('Outputs',
-                                          ['action', 'value', 'dist',
-                                           'state_out', 'normed_action'])
+        self._outputs_normed = namedtuple('Outputs', [
+                                    'action', 'value', 'dist', 'state_out',
+                                    'batch_sizes', 'sorted_indices',
+                                    'unsorted_indices', 'normed_action'])
 
     def forward(self, *args, **kwargs):
         """Forward."""
@@ -32,7 +33,10 @@ class UnnormActionPolicy(Policy):
             outs = self._outputs_normed(action=ac, value=outs.value,
                                         dist=outs.dist,
                                         state_out=outs.state_out,
-                                        normed_action=outs.action)
+                                        normed_action=outs.action,
+                                        batch_sizes=outs.batch_sizes,
+                                        sorted_indices=outs.sorted_indices,
+                                        unsorted_indices=outs.unsorted_indices)
         else:
             raise ValueError("Action space must be an instance of 'Box'")
         return outs

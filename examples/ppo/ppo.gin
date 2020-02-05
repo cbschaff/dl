@@ -17,7 +17,6 @@ PPO.policy_fn = @a3c_cnn_fn
 PPO.nenv = 8
 PPO.eval_num_episodes = 20
 PPO.record_num_episodes = 5
-PPO.rollout_length = 256
 PPO.batch_size = 64
 PPO.gamma = 0.99
 PPO.lambda_ = 0.95

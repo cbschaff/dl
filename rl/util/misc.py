@@ -47,9 +47,9 @@ def _get_env_ob_norm(env, steps):
     obs = [ob]
     for _ in range(steps):
         ob, _, done, _ = env.step(env.action_space.sample())
-        obs.append(ob)
         if done:
-            obs.append(env.reset())
+            ob = env.reset()
+        obs.append(ob)
     obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
     mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
     std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
@@ -57,13 +57,18 @@ def _get_env_ob_norm(env, steps):
 
 
 def _get_venv_ob_norm(env, steps):
+    # Only collect obs from the first environment. This is hacky and
+    # inefficient but is that simplest solution given that environments sync
+    # their resets.
     ob = env.reset()
-    obs = [ob]
+    obs = [nest.map_structure(lambda x: x[0], ob)]
     for _ in range(steps):
-        ob, r, _, _ = env.step(
+        ob, _, done, _ = env.step(
             [env.action_space.sample() for _ in range(env.num_envs)])
-        obs.append(ob)
-    obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
+        if done[0]:
+            ob = env.reset()
+        obs.append(nest.map_structure(lambda x: x[0], ob))
+    obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
     mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
     std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
     return mean, std
