@@ -21,20 +21,15 @@ class Actor(object):
         self.state = None
         self.device = device
 
-    def __call__(self, ob, dones=None):
+    def __call__(self, ob):
         """__call__."""
         def _to_torch(o):
             return torch.from_numpy(o).to(self.device)
         ob = nest.map_structure(_to_torch, ob)
-        if dones is None:
-            batch_size = nest.flatten(ob)[0].shape[0]
-            mask = torch.zeros([batch_size]).to(self.device).float()
-        else:
-            mask = torch.from_numpy(1. - dones).to(self.device).float()
         if self.state is None:
             out = self.net(ob)
         else:
-            out = self.net(ob, self.state, mask)
+            out = self.net(ob, self.state)
         if hasattr(out, 'state_out'):
             self.state = out.state_out
         return out.action.cpu().numpy()
@@ -63,31 +58,35 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
     env = ensure_vec_env(env)
     ep_lengths = []
     ep_rewards = []
-    obs = env.reset()
     lengths = np.zeros(env.num_envs, dtype=np.int32)
     rewards = np.zeros(env.num_envs, dtype=np.float32)
     all_infos = []
-    dones = None
     actor = Actor(actor, device)
     while len(ep_lengths) < nepisodes:
-        obs, rs, dones, infos = env.step(actor(obs, dones))
-        rewards += rs
-        lengths += 1
-        if save_info:
-            all_infos.append(infos)
-        for i, done in enumerate(dones):
+        _dones = np.zeros(env.num_envs, dtype=np.bool)
+        all_infos.extend([[] for _ in range(env.num_envs)])
+        obs = env.reset()
+        while not np.all(_dones):
+            obs, rs, dones, infos = env.step(actor(obs))
+            rewards += rs * np.logical_not(_dones)
+            lengths += np.logical_not(_dones)
+            for i, _ in enumerate(dones):
+                if 'episode_info' in infos[i]:
+                    dones[i] = infos[i]['episode_info']['done']
+                if not _dones[i] and save_info:
+                    all_infos[-i-1].append(infos[i])
+            _dones = np.logical_or(dones, _dones)
+
+        # save results
+        for i, info in enumerate(infos):
             if 'episode_info' in infos[i]:
-                if infos[i]['episode_info']['done']:
-                    ep_lengths.append(infos[i]['episode_info']['length'])
-                    ep_rewards.append(infos[i]['episode_info']['reward'])
-                    lengths[i] = 0
-                    rewards[i] = 0.
-                dones[i] = infos[i]['episode_info']['done']
-            elif done:
+                ep_lengths.append(infos[i]['episode_info']['length'])
+                ep_rewards.append(infos[i]['episode_info']['reward'])
+            else:
                 ep_lengths.append(int(lengths[i]))
                 ep_rewards.append(float(rewards[i]))
-                lengths[i] = 0
-                rewards[i] = 0.
+        lengths[:] = 0
+        rewards[:] = 0.
 
     outs = {
         'episode_lengths': ep_lengths,
@@ -128,9 +127,6 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
     id = 0
     actor = Actor(actor, device)
     episodes = 0
-    obs = env.reset()
-    dones = None
-    ims = None
 
     def write_ims(ims, id):
         for im in ims:
@@ -139,24 +135,40 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
         return id
 
     while episodes < nepisodes:
+        obs = env.reset()
+        _dones = np.zeros(env.num_envs, dtype=np.bool)
+        ims = [[] for _ in range(env.num_envs)]
+
+        # collect images
         try:
             rgbs = env.get_images()
         except Exception:
             logger.log("Error while rendering.")
             return
-        if not ims:
-            ims = [[] for rgb in rgbs]
         for i, rgb in enumerate(rgbs):
             ims[i].append(rgb)
-        obs, _, dones, infos = env.step(actor(obs, dones))
-        for i, done in enumerate(dones):
-            if 'episode_info' in infos[i]:
-                if infos[i]['episode_info']['done']:
-                    id = write_ims(ims[i], id)
-                    ims[i] = []
-                    episodes += 1
-                dones[i] = infos[i]['episode_info']['done']
-            elif done:
+
+        # rollout episodes
+        while not np.all(_dones):
+            obs, r_, dones, infos = env.step(actor(obs))
+            for i, _ in enumerate(dones):
+                if 'episode_info' in infos[i]:
+                    dones[i] = infos[i]['episode_info']['done']
+
+            # collect images
+            try:
+                rgbs = env.get_images()
+            except Exception:
+                logger.log("Error while rendering.")
+                return
+            for i, rgb in enumerate(rgbs):
+                if not _dones[i]:
+                    ims[i].append(rgb)
+            _dones = np.logical_or(dones, _dones)
+
+        # save images
+        for i in range(env.num_envs):
+            if episodes < nepisodes:
                 id = write_ims(ims[i], id)
                 ims[i] = []
                 episodes += 1
@@ -186,7 +198,8 @@ if __name__ == '__main__':
                 return namedtuple('test', ['action', 'state_out'])(
                     action=ac, state_out=None)
 
-            stats = rl_evaluate(env, actor, 10, outfile='./out.pt')
+            stats = rl_evaluate(env, actor, 10, outfile='./out.pt',
+                                save_info=True)
             assert len(stats['episode_lengths']) >= 10
             assert len(stats['episode_rewards']) >= 10
             assert len(stats['episode_rewards']) == len(
