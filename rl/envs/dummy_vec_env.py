@@ -81,6 +81,11 @@ class DummyVecEnv(VecEnv):
         else:
             return super().render(mode=mode)
 
+    def close_extras(self):
+        for env in self.envs:
+            env.close()
+        self.closed = True
+
     def state_dict(self):
         env_states = []
         for e in self.envs:

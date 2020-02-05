@@ -77,6 +77,12 @@ class VecFrameStack(VecEnvWrapper):
         """Step wait."""
         return self.venv.step_wait()
 
+    def state_dict(self):
+        return {}
+
+    def load_state_dict(self, state_dict):
+        pass
+
 
 if __name__ == '__main__':
     import unittest
