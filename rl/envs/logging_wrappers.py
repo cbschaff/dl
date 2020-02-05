@@ -65,15 +65,14 @@ class VecEpisodeLogger(VecEnvWrapper):
         obs = self.venv.reset()
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
-        self._dones = [False for _ in range(self.num_envs)]
+        self._dones = np.zeros(self.num_envs, dtype=np.bool)
         return obs
 
     def step(self, action):
         """Step."""
         obs, rews, dones, infos = self.venv.step(action)
         if not self._eval:
-            x = np.logical_and(self._dones, dones)
-            self.t += np.sum(np.logical_not(x))
+            self.t += np.sum(np.logical_not(self._dones))
         for i, d in enumerate(self._dones):  # handle synced resets
             if not d:
                 self.lens[i] += 1
@@ -98,7 +97,7 @@ class VecEpisodeLogger(VecEnvWrapper):
                                       epinfo['length'], self.t, time.time())
                     logger.add_scalar('env/unwrapped_episode_reward',
                                       epinfo['reward'], self.t, time.time())
-        self._dones = dones
+        self._dones = np.logical_or(dones, self._dones)
 
         return obs, rews, dones, infos
 

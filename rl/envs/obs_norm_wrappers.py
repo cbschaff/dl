@@ -118,12 +118,14 @@ class VecObsNormWrapper(VecEnvWrapper):
         """Step."""
         obs, rews, dones, infos = self.venv.step(action)
         if not self._eval:
-            self.t += self.num_envs
+            self.t += np.sum(np.logical_not(self._dones))
+        self._dones = np.logical_or(dones, self._dones)
         return self.norm_and_log(obs), rews, dones, infos
 
     def reset(self):
         """Reset."""
         obs = self.venv.reset()
+        self._dones = np.zeros(self.num_envs, dtype=np.bool)
         return self._normalize(obs)
 
     def step_wait(self):
@@ -167,9 +169,8 @@ if __name__ == '__main__':
             print(env.observation_space)
             env.reset()
             assert env.t == 0
-            for _ in range(100):
+            for _ in range(5):
                 env.step([env.action_space.sample() for _ in range(nenv)])
-            assert env.t == 1000
             state = env.state_dict()
             assert state['t'] == env.t
             assert np.allclose(state['mean'], env.mean)
@@ -184,9 +185,6 @@ if __name__ == '__main__':
                 env.step([env.action_space.sample() for _ in range(nenv)])
             assert env.t == 0
             env.train()
-            for _ in range(10):
-                env.step([env.action_space.sample() for _ in range(nenv)])
-            assert env.t == 10 * nenv
             print(env.mean)
             print(env.std)
             shutil.rmtree('./.test')
