@@ -140,6 +140,13 @@ class PPO(Algorithm):
                 self.opt.step()
         for k, v in losses.items():
             logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
+
+        data = self.data_manager.storage.get_rollout()
+        value_error = data['vpred'].data - data['q_mc'].data
+        logger.add_scalar('alg/value_error_mean',
+                          value_error.mean().cpu().numpy(), self.t, time.time())
+        logger.add_scalar('alg/value_error_std',
+                          value_error.std().cpu().numpy(), self.t, time.time())
         return self.t
 
     def evaluate(self):
