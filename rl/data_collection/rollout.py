@@ -59,6 +59,7 @@ class RolloutStorage(object):
                 self.data[k] = _make_storage(step_data[k])
         self.data['vtarg'] = _make_storage(step_data['vpred'])
         self.data['atarg'] = _make_storage(step_data['vpred'])
+        self.data['return'] = _make_storage(step_data['vpred'])
         self.nenv = step_data['reward'].shape[0]
         self.reset()
 
@@ -117,6 +118,14 @@ class RolloutStorage(object):
             else:
                 _check_shape(step_data[k], key=k)
                 _copy_data((self.data[k], step_data[k]))
+
+        if self.step == 0:
+            self.data['return'].fill_(0.)
+            done = torch.zeros_like(self.data['done'][0])
+        else:
+            done = self.data['done'][self.step - 1]
+        self.data['return'] += (torch.logical_not(done)
+                                * step_data['reward'].to(self.device))
 
         self.sequence_lengths += torch.logical_not(step_data['done'].cpu())
         self.step = self.step + 1
@@ -223,7 +232,7 @@ if __name__ == '__main__':
                 data = {}
                 data['obs'] = x*torch.ones(size=(np, 1, 84, 84))
                 data['action'] = torch.zeros(size=(np, 1))
-                data['reward'] = torch.zeros(size=(np,))
+                data['reward'] = torch.ones(size=(np,))
                 data['done'] = torch.Tensor(dones).bool()
                 data['vpred'] = x*torch.ones(size=(np,))
                 data['logp'] = torch.zeros(size=(np,))
@@ -248,6 +257,8 @@ if __name__ == '__main__':
                 assert batch['vtarg'].shape == (2,)
                 assert batch['done'].shape == (2,)
                 assert batch['reward'].shape == (2,)
+                assert batch['return'].shape == (2,)
+                print(batch['return'])
 
             for batch in r.sampler(2, recurrent=True):
                 n = batch['obs'].data.shape[0]
@@ -256,6 +267,8 @@ if __name__ == '__main__':
                 assert batch['vtarg'].shape == (n,)
                 assert batch['done'].shape == (n,)
                 assert batch['reward'].shape == (n,)
+                assert batch['return'].shape == (n,)
+                print(batch['return'])
 
         # def test_recurrent(self):
         #     """Test recurreent generator."""

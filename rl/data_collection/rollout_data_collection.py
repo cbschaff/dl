@@ -181,7 +181,6 @@ if __name__ == '__main__':
             else:
                 x, state_out = self.lstm(x, state_in['lstm'])
             if isinstance(x, PackedSequence):
-                print(x)
                 x = x.data
             else:
                 x = x.squeeze(0)
@@ -247,7 +246,6 @@ if __name__ == '__main__':
                 assert count == np.ceil(nenv / data_manager.batch_size)
             else:
                 n = data_manager.storage.get_rollout()['reward'].data.shape[0]
-                print(n, data_manager.batch_size, count)
                 assert count == np.ceil(n / data_manager.batch_size)
 
     def env_discrete(nenv):
@@ -263,7 +261,7 @@ if __name__ == '__main__':
 
         def test_feed_forward(self):
             """Test feed forward network."""
-            test(env_discrete(2), FeedForwardBase, 32, False)
+            test(env_discrete(2), FeedForwardBase, 8, False)
 
         def test_recurrent(self):
             """Test recurrent network."""
@@ -271,7 +269,7 @@ if __name__ == '__main__':
 
         def test_feed_forward_nested_ob(self):
             """Test feed forward network."""
-            test(env_discrete(2), FeedForwardBase, 32, False)
+            test(env_discrete(2), FeedForwardBase, 8, False)
 
         def test_recurrent_nested_ob(self):
             """Test recurrent network."""
