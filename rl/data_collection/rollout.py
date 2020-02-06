@@ -128,7 +128,6 @@ class RolloutStorage(object):
             done = self.data['done'][self.step - 1]
         r = torch.logical_not(done) * step_data['reward'].to(self.device)
         self.data['return'] += r
-        self.data['q_mc'][:self.step+1] += r
 
         self.sequence_lengths += torch.logical_not(step_data['done'].cpu())
         self.step = self.step + 1
@@ -140,8 +139,9 @@ class RolloutStorage(object):
             raise ValueError("Rollout should be complete before computing "
                              "targets.")
         max_step = int(torch.max(self.sequence_lengths))
-        self.data['vtarg'][-1] = self.data['reward'][-1]
-        gae = self.data['reward'][-1] - self.data['vpred'][-1]
+        self.data['vtarg'][max_step-1] = self.data['reward'][max_step-1]
+        gae = self.data['reward'][max_step-1] - self.data['vpred'][max_step-1]
+        self.data['q_mc'][-1] = self.data['reward'][-1]
         for step in reversed(range(max_step - 1)):
             mask = torch.logical_not(self.data['done'][step])
             if step == 0:
@@ -153,6 +153,8 @@ class RolloutStorage(object):
                      - self.data['vpred'][step])
             gae = mask_prev * (delta + gamma * lambda_ * gae)
             self.data['atarg'][step].copy_(gae)
+            self.data['q_mc'][step] = (self.data['reward'][step] + mask * gamma
+                                       * self.data['q_mc'][step + 1])
         self.data['vtarg'] = self.data['atarg'] + self.data['vpred']
         if norm_advantages:
             self.data['atarg'] = (self.data['atarg']
