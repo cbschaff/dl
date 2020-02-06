@@ -60,6 +60,7 @@ class RolloutStorage(object):
         self.data['vtarg'] = _make_storage(step_data['vpred'])
         self.data['atarg'] = _make_storage(step_data['vpred'])
         self.data['return'] = _make_storage(step_data['vpred'])
+        self.data['q_mc'] = _make_storage(step_data['vpred'])
         self.nenv = step_data['reward'].shape[0]
         self.reset()
 
@@ -121,11 +122,13 @@ class RolloutStorage(object):
 
         if self.step == 0:
             self.data['return'].fill_(0.)
+            self.data['q_mc'].fill_(0.)
             done = torch.zeros_like(self.data['done'][0])
         else:
             done = self.data['done'][self.step - 1]
-        self.data['return'] += (torch.logical_not(done)
-                                * step_data['reward'].to(self.device))
+        r = torch.logical_not(done) * step_data['reward'].to(self.device)
+        self.data['return'] += r
+        self.data['q_mc'][:self.step+1] += r
 
         self.sequence_lengths += torch.logical_not(step_data['done'].cpu())
         self.step = self.step + 1
@@ -258,7 +261,9 @@ if __name__ == '__main__':
                 assert batch['done'].shape == (2,)
                 assert batch['reward'].shape == (2,)
                 assert batch['return'].shape == (2,)
+                assert batch['q_mc'].shape == (2,)
                 print(batch['return'])
+                print(batch['q_mc'])
 
             for batch in r.sampler(2, recurrent=True):
                 n = batch['obs'].data.shape[0]
@@ -268,108 +273,8 @@ if __name__ == '__main__':
                 assert batch['done'].shape == (n,)
                 assert batch['reward'].shape == (n,)
                 assert batch['return'].shape == (n,)
+                assert batch['q_mc'].shape == (n,)
                 print(batch['return'])
-
-        # def test_recurrent(self):
-        #     """Test recurreent generator."""
-        #     def _gen_data(np, x):
-        #         data = {}
-        #         data['obs'] = x*torch.ones(size=(np, 1, 84, 84))
-        #         data['action'] = torch.zeros(size=(np, 1))
-        #         data['reward'] = torch.zeros(size=(np, 1))
-        #         data['mask'] = torch.ones(size=(np, 1))
-        #         data['vpred'] = x*torch.ones(size=(np, 1))
-        #         data['logp'] = torch.zeros(size=(np, 1))
-        #         data['state'] = torch.zeros(size=(np, 5))
-        #         return data
-        #     r = RolloutStorage(10, 4, recurrent=True)
-        #     for i in range(10):
-        #         r.insert(_gen_data(4, i))
-        #         if i < 9:
-        #             try:
-        #                 r.sampler(2)
-        #                 assert False
-        #             except Exception:
-        #                 pass
-        #     r.compute_targets(torch.ones(size=(4, 1)), torch.ones(size=(4, 1)),
-        #                       gamma=0.99, use_gae=True, lambda_=1.0)
-        #     for batch in r.sampler(2):
-        #         assert batch['obs'].shape == (20, 1, 84, 84)
-        #         assert batch['atarg'].shape == (20, 1)
-        #         assert batch['vtarg'].shape == (20, 1)
-        #         assert batch['mask'].shape == (20, 1)
-        #         assert batch['reward'].shape == (20, 1)
-        #         assert batch['state'].shape == (2, 5)
-        #
-        # def test_nested_feed_forward(self):
-        #     """Test feeed forward generator."""
-        #     def _gen_data(np, x):
-        #         data = {}
-        #         ob = x*torch.ones(size=(np, 1, 84, 84))
-        #         data['obs'] = [ob, {'ob1': ob, 'ob2': ob}]
-        #         data['action'] = torch.zeros(size=(np, 1))
-        #         data['reward'] = torch.zeros(size=(np, 1))
-        #         data['mask'] = torch.ones(size=(np, 1))
-        #         data['vpred'] = x*torch.ones(size=(np, 1))
-        #         data['logp'] = torch.zeros(size=(np, 1))
-        #         return data
-        #     r = RolloutStorage(10, 2, recurrent=False)
-        #     for i in range(10):
-        #         r.insert(_gen_data(2, i))
-        #         if i < 9:
-        #             try:
-        #                 r.sampler(6)
-        #                 assert False
-        #             except Exception:
-        #                 pass
-        #     r.compute_targets(torch.ones(size=(2, 1)), torch.ones(size=(2, 1)),
-        #                       gamma=0.99, use_gae=True, lambda_=1.0,
-        #                       norm_advantages=True)
-        #     assert (np.allclose(r.data['atarg'].mean(), 0., atol=1e-6)
-        #             and np.allclose(r.data['atarg'].std(), 1., atol=1e-6))
-        #     for batch in r.sampler(6):
-        #         assert (batch['obs'][0].shape == (6, 1, 84, 84)
-        #                 or batch['obs'][0].shape == (2, 1, 84, 84))
-        #         assert (batch['obs'][1]['ob1'].shape == (6, 1, 84, 84)
-        #                 or batch['obs'][1]['ob1'].shape == (2, 1, 84, 84))
-        #         assert (batch['obs'][1]['ob2'].shape == (6, 1, 84, 84)
-        #                 or batch['obs'][1]['ob2'].shape == (2, 1, 84, 84))
-        #
-        # def test_nested_recurrent(self):
-        #     """Test recurreent generator."""
-        #     def _gen_data(np, x):
-        #         data = {}
-        #         ob = x*torch.ones(size=(np, 1, 84, 84))
-        #         data['obs'] = [ob, {'ob1': ob, 'ob2': ob}]
-        #         data['action'] = torch.zeros(size=(np, 1))
-        #         data['reward'] = torch.zeros(size=(np, 1))
-        #         data['mask'] = torch.ones(size=(np, 1))
-        #         data['vpred'] = x*torch.ones(size=(np, 1))
-        #         data['logp'] = torch.zeros(size=(np, 1))
-        #         state = torch.zeros(size=(np, 5))
-        #         data['state'] = {'1': state, '2': [state, state]}
-        #         return data
-        #     r = RolloutStorage(10, 4, recurrent=True)
-        #     for i in range(10):
-        #         r.insert(_gen_data(4, i))
-        #         if i < 9:
-        #             try:
-        #                 r.sampler(2)
-        #                 assert False
-        #             except Exception:
-        #                 pass
-        #     r.compute_targets(torch.ones(size=(4, 1)), torch.ones(size=(4, 1)),
-        #                       gamma=0.99, use_gae=True, lambda_=1.0)
-        #     for batch in r.sampler(2):
-        #         assert batch['obs'][0].shape == (20, 1, 84, 84)
-        #         assert batch['obs'][1]['ob1'].shape == (20, 1, 84, 84)
-        #         assert batch['obs'][1]['ob2'].shape == (20, 1, 84, 84)
-        #         assert batch['atarg'].shape == (20, 1)
-        #         assert batch['vtarg'].shape == (20, 1)
-        #         assert batch['mask'].shape == (20, 1)
-        #         assert batch['reward'].shape == (20, 1)
-        #         assert batch['state']['1'].shape == (2, 5)
-        #         assert batch['state']['2'][0].shape == (2, 5)
-        #         assert batch['state']['2'][1].shape == (2, 5)
+                print(batch['q_mc'])
 
     unittest.main()

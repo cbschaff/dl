@@ -52,7 +52,7 @@ def worker(remote, parent_remote, env_fn_wrapper, seed):
                 remote.send(rng.get_state())
             elif cmd == 'get_state':
                 count += 1
-                remote.send([env_state_dict(env) for env in envs])
+                remote.send(env_state_dict(env))
             elif count == 0:
                 continue
 
