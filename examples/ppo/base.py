@@ -53,7 +53,7 @@ class A3CRNN(ActorCriticBase):
         nn.init.orthogonal_(self.vf.weight.data, gain=1.0)
         nn.init.constant_(self.vf.bias.data, 0)
 
-    def forward(self, ob, state_in=None, mask=None):
+    def forward(self, ob, state_in=None):
         """Forward."""
         if isinstance(ob, PackedSequence):
             x = ob.data

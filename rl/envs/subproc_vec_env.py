@@ -170,12 +170,7 @@ class SubprocVecEnv(VecEnv):
 def _flatten_obs(obs):
     assert isinstance(obs, (list, tuple))
     assert len(obs) > 0
-
-    if isinstance(obs[0], dict):
-        keys = obs[0].keys()
-        return {k: np.stack([o[k] for o in obs]) for k in keys}
-    else:
-        return np.stack(obs)
+    return nest.map_structure(np.stack, nest.zip_structure(*obs))
 
 
 if __name__ == "__main__":

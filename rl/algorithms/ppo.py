@@ -28,7 +28,7 @@ class PPOActor(object):
         data = {'action': outs.action,
                 'value': outs.value,
                 'logp': outs.dist.log_prob(outs.action)}
-        if outs.state_out:
+        if outs.state_out is not None:
             data['state'] = outs.state_out
         return data
 

@@ -2,8 +2,9 @@
 
 import numpy as np
 from baselines.common.vec_env import VecEnv
-from baselines.common.vec_env.util import copy_obs_dict, dict_to_obs, obs_space_info
 from dl.rl import env_state_dict, env_load_state_dict
+from dl import nest
+
 
 class DummyVecEnv(VecEnv):
     """
@@ -12,6 +13,7 @@ class DummyVecEnv(VecEnv):
     Useful when debugging and when num_env == 1 (in the latter case,
     avoids communication overhead)
     """
+
     def __init__(self, env_fns):
         """
         Arguments:
@@ -19,14 +21,10 @@ class DummyVecEnv(VecEnv):
         """
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
-        VecEnv.__init__(self, len(env_fns), env.observation_space, env.action_space)
-        obs_space = env.observation_space
-        self.keys, shapes, dtypes = obs_space_info(obs_space)
+        VecEnv.__init__(self, len(env_fns), env.observation_space,
+                        env.action_space)
 
-        self.buf_obs = { k: np.zeros((self.num_envs,) + tuple(shapes[k]), dtype=dtypes[k]) for k in self.keys }
-        self.buf_dones = np.zeros((self.num_envs,), dtype=np.bool)
-        self.buf_rews  = np.zeros((self.num_envs,), dtype=np.float32)
-        self.buf_infos = [{} for _ in range(self.num_envs)]
+        self.transitions = [None for _ in range(self.num_envs)]
         self.actions = None
         self.spec = self.envs[0].spec
 
@@ -46,31 +44,17 @@ class DummyVecEnv(VecEnv):
 
     def step_wait(self):
         for e in range(self.num_envs):
-            if self.buf_dones[e]:
-                continue
-            action = self.actions[e]
+            if self.transitions[e] is None or not self.transitions[e][2]:  # if episode is over:
+                self.transitions[e] = self.envs[e].step(self.actions[e])
 
-            obs, self.buf_rews[e], self.buf_dones[e], self.buf_infos[e] = self.envs[e].step(action)
-            self._save_obs(e, obs)
-        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones),
-                self.buf_infos.copy())
+        obs, rs, dones, infos = zip(*self.transitions)
+        obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
+        return obs, np.stack(rs), np.stack(dones), infos
 
     def reset(self):
-        for e in range(self.num_envs):
-            obs = self.envs[e].reset()
-            self._save_obs(e, obs)
-        self.buf_dones[:] = False
-        return self._obs_from_buf()
-
-    def _save_obs(self, e, obs):
-        for k in self.keys:
-            if k is None:
-                self.buf_obs[k][e] = obs
-            else:
-                self.buf_obs[k][e] = obs[k]
-
-    def _obs_from_buf(self):
-        return dict_to_obs(copy_obs_dict(self.buf_obs))
+        obs = [self.envs[e].reset() for e in range(self.num_envs)]
+        self.transitions = [None for _ in range(self.num_envs)]
+        return nest.map_structure(np.stack, nest.zip_structure(*obs))
 
     def get_images(self):
         return [env.render(mode='rgb_array') for env in self.envs]
