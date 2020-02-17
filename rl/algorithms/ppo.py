@@ -135,8 +135,13 @@ class PPO(Algorithm):
                     losses[k].append(v.detach().cpu().numpy())
                 loss['total'].backward()
                 if self.max_grad_norm:
-                    nn.utils.clip_grad_norm_(self.pi.parameters(),
-                                             self.max_grad_norm)
+                    norm = nn.utils.clip_grad_norm_(self.pi.parameters(),
+                                                    self.max_grad_norm)
+                    logger.add_scalar('alg/grad_norm', norm, self.t,
+                                      time.time())
+                    logger.add_scalar('alg/grad_norm_clipped',
+                                      min(norm, self.max_grad_norm),
+                                      self.t, time.time())
                 self.opt.step()
         for k, v in losses.items():
             logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
