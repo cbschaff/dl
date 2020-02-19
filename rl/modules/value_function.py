@@ -14,12 +14,16 @@ class ValueFunction(nn.Module):
         super().__init__()
         self.base = base
         assert isinstance(self.base, ValueFunctionBase)
-        self.outputs = namedtuple('Outputs', ['value'])
+        self.outputs = namedtuple('Outputs', ['value', 'state_out'])
 
-    def forward(self, ob):
+    def forward(self, ob, state_in=None):
         """Forward."""
-        value = self.base(ob).squeeze(-1)
-        return self.outputs(value=value)
+        outs = self.base(ob) if state_in is None else self.base(ob, state_in)
+        if isinstance(outs, tuple):
+            value, state_out = outs
+        else:
+            value, state_out = outs, None
+        return self.outputs(value=value.squeeze(-1), state_out=state_out)
 
 
 if __name__ == '__main__':

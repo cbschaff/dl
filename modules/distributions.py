@@ -1,6 +1,7 @@
 """Standardize distribution interface and make convenience modules."""
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.distributions as D
 import gin
 
@@ -11,6 +12,15 @@ class CatDist(D.Categorical):
     def mode(self):
         """Mode."""
         return self.probs.argmax(dim=-1)
+
+    def kl(self, other):
+        log_ratio = (F.log_softmax(self.logits, dim=1)
+                     - F.log_softmax(other.logits, dim=1))
+        return (self.probs * log_ratio).sum(dim=1)
+
+    def tensorize(self):
+        """Return the tensors used to create the distribution."""
+        return {'logits': self.logits}
 
 
 class Normal(D.Normal):
@@ -27,6 +37,16 @@ class Normal(D.Normal):
     def entropy(self):
         """Entropy."""
         return super().entropy().sum(-1)
+
+    def kl(self, other):
+        t1 = torch.log(other.stddev / self.stddev).sum(dim=1)
+        t2 = ((self.variance + (self.mean - other.mean).pow(2))
+              / (2.0 * other.variance)).sum(dim=1)
+        return t1 + t2 - 0.5 * self.mean.shape[1]
+
+    def tensorize(self):
+        """Return the tensors used to create the distribution."""
+        return {'loc': self.mean, 'scale': self.stddev}
 
 
 class TanhNormal(D.Distribution):
@@ -323,6 +343,10 @@ if __name__ == '__main__':
             assert dist.log_prob(ac).shape == (2,)
             assert dist.entropy().shape == (2,)
 
+            dist2 = CatDist(**dist.tensorize())
+            assert torch.allclose(dist.kl(dist2), torch.zeros([1]))
+            assert torch.allclose(dist2.kl(dist), torch.zeros([1]))
+
         def test_delta(self):
             """Test delta."""
             d = Delta(10, 2)
@@ -380,6 +404,10 @@ if __name__ == '__main__':
 
             dist, logstd = dg(features, return_logstd=True)
             assert torch.allclose(logstd, torch.zeros([1]))
+
+            dist2 = Normal(**dist.tensorize())
+            assert torch.allclose(dist.kl(dist2), torch.zeros([1]))
+            assert torch.allclose(dist2.kl(dist), torch.zeros([1]))
 
         def test_tanhnormal(self):
             """Test tanh normal."""

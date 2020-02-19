@@ -199,7 +199,7 @@ class DDPG(Algorithm):
         with torch.no_grad():
             target_action = self.target_pi(batch['next_obs']).normed_action
             target_q = self.target_qf(batch['next_obs'], target_action).value
-            qtarg = self.reward_scale * batch['reward'] + (
+            qtarg = self.reward_scale * batch['reward'].float() + (
                     (1.0 - batch['done']) * self.gamma * target_q)
 
         q = self.qf(batch['obs'], self._norm_actions(batch['action'])).value

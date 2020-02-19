@@ -17,33 +17,57 @@ class QFunction(nn.Module):
                                       ContinuousQFunctionBase))
         self.discrete = isinstance(self.base, DiscreteQFunctionBase)
         self.outputs = namedtuple('Outputs', ['action', 'value', 'max_a',
-                                              'max_q', 'qvals'])
+                                              'max_q', 'qvals', 'state_out'])
 
-    def forward(self, ob, action=None):
+    def _run_base(self, ob, action=None, state_in=None):
+        if action is None or self.discrete:
+            assert self.discrete, (
+                "You must provide an action for a continuous action space")
+            if state_in is None:
+                outs = self.base(ob)
+            else:
+                outs = self.base(ob, state_in=state_in)
+            if isinstance(outs, tuple):
+                qvals, state_out = outs
+            else:
+                qvals, state_out = outs, None
+            return qvals, state_out
+
+        else:
+            if state_in is None:
+                outs = self.base(ob, action)
+            else:
+                outs = self.base(ob, action, state_in)
+            if isinstance(outs, tuple):
+                qval, state_out = outs
+            else:
+                qval, state_out = outs, None
+            return qval.squeeze(1), state_out
+
+    def forward(self, ob, action=None, state_in=None):
         """Compute Q-value.
 
         Returns:
             out (namedtuple):
                 out.action: If an action is specified, out.action is the same,
                             otherwise it is the argmax of the Q-values
-                out.value: The q value of (x, out.action)
+                out.value:  The q value of (x, out.action)
                 out.max_a:  The argmax of the Q-values
                             (only available for discrete action spaces)
                 out.max_q:  The max of the Q-values
                             (only available for discrete action spaces)
                 out.qvals:  The Q-value for each action
                             (only available for discrete action spaces)
+                out.state_out:  The temporal state of the model
 
         """
         if action is None:
-            assert self.discrete, (
-                "You must provide an action for a continuous action space")
-            qvals = self.base(ob)
+            qvals, state_out = self._run_base(ob, state_in=state_in)
             maxq, maxa = qvals.max(dim=-1)
             return self.outputs(action=maxa, value=maxq, max_a=maxa, max_q=maxq,
-                                qvals=qvals)
+                                qvals=qvals, state_out=state_out)
         elif self.discrete:
-            qvals = self.base(ob)
+            qvals, state_out = self._run_base(ob, state_in=state_in)
             maxq, maxa = qvals.max(dim=-1)
             if len(action.shape) == 1:
                 action = action.long().unsqueeze(1)
@@ -51,11 +75,12 @@ class QFunction(nn.Module):
                 action = action.long()
             value = qvals.gather(1, action).squeeze(1)
             return self.outputs(action=action.squeeze(1), value=value,
-                                max_a=maxa, max_q=maxq, qvals=qvals)
+                                max_a=maxa, max_q=maxq, qvals=qvals,
+                                state_out=state_out)
         else:
-            value = self.base(ob, action).squeeze(1)
+            value, state_out = self._run_base(ob, action, state_in)
             return self.outputs(action=action, value=value, max_a=None,
-                                max_q=None, qvals=None)
+                                max_q=None, qvals=None, state_out=state_out)
 
 
 if __name__ == '__main__':

@@ -184,7 +184,7 @@ class TD3(Algorithm):
             target_q1 = self.target_qf1(batch['next_obs'], target_action).value
             target_q2 = self.target_qf2(batch['next_obs'], target_action).value
             target_q = torch.min(target_q1, target_q2)
-            qtarg = self.reward_scale * batch['reward'] + (
+            qtarg = self.reward_scale * batch['reward'].float() + (
                     (1.0 - batch['done']) * self.gamma * target_q)
 
         normed_action = self._norm_actions(batch['action'])

@@ -184,7 +184,7 @@ class SAC(Algorithm):
 
         # qf loss
         vtarg = self.target_vf(batch['next_obs']).value
-        qtarg = self.reward_scale * batch['reward'] + (
+        qtarg = self.reward_scale * batch['reward'].float() + (
                     (1.0 - batch['done']) * self.gamma * vtarg)
         assert qtarg.shape == q1.shape
         assert qtarg.shape == q2.shape

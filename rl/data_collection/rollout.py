@@ -53,10 +53,7 @@ class RolloutStorage(object):
             return torch.zeros(size=shape, dtype=arr.dtype, device=self.device)
 
         for k in self.keys:
-            if k == 'obs':
-                self.data[k] = nest.map_structure(_make_storage, step_data[k])
-            else:
-                self.data[k] = _make_storage(step_data[k])
+            self.data[k] = nest.map_structure(_make_storage, step_data[k])
         self.data['vtarg'] = _make_storage(step_data['vpred'])
         self.data['atarg'] = _make_storage(step_data['vpred'])
         self.data['return'] = _make_storage(step_data['vpred'])
@@ -112,13 +109,9 @@ class RolloutStorage(object):
                                  f"of processes: {self.num_processes}")
 
         for k in self.keys:
-            if k == 'obs':
-                nest.map_structure(partial(_check_shape, key=k), step_data[k])
-                nest.map_structure(_copy_data, nest.zip_structure(self.data[k],
-                                                                  step_data[k]))
-            else:
-                _check_shape(step_data[k], key=k)
-                _copy_data((self.data[k], step_data[k]))
+            nest.map_structure(partial(_check_shape, key=k), step_data[k])
+            nest.map_structure(_copy_data, nest.zip_structure(self.data[k],
+                                                              step_data[k]))
 
         if self.step == 0:
             self.data['return'].fill_(0.)

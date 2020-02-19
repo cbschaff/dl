@@ -20,7 +20,7 @@ class RLBase(nn.Module):
 class ValueFunctionBase(RLBase):
     """ValueFunction Interface."""
 
-    def forward(self, ob):
+    def forward(self, ob, state_in=None):
         """Return the value of ob."""
         raise NotImplementedError
 
@@ -28,7 +28,7 @@ class ValueFunctionBase(RLBase):
 class DiscreteQFunctionBase(RLBase):
     """Discsrete QFunction Interface."""
 
-    def forward(self, ob):
+    def forward(self, ob, state_in=None):
         """Return the qvalue of ob for each action."""
         raise NotImplementedError
 
@@ -36,7 +36,7 @@ class DiscreteQFunctionBase(RLBase):
 class ContinuousQFunctionBase(RLBase):
     """Continuous QFunction Interface."""
 
-    def forward(self, ob, ac):
+    def forward(self, ob, ac, state_in=None):
         """Return the qvalue of ob and ac."""
         raise NotImplementedError
 
