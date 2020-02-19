@@ -14,7 +14,7 @@ optim.Adam.betas = (0.9, 0.999)
 optim.Adam.eps = 1e-5
 
 PPO2.env_fn = @make_env
-PPO2.policy_fn = @policy_fn
+PPO2.policy_fn = @continuous_policy_fn
 PPO2.value_fn = @value_fn
 PPO2.nenv = 64
 PPO2.eval_num_episodes = 100
@@ -34,7 +34,7 @@ PPO2.gpu = True
 
 Checkpointer.ckpt_period = 100000
 
-make_env.env_id = "LunarLander-v2"
+make_env.env_id = "LunarLanderContinuous-v2"
 make_env.norm_observations = True
 
 VecObsNormWrapper.steps = 10000
