@@ -106,6 +106,7 @@ class PPO2(Algorithm):
         self.t = 0
 
     def compute_kl(self):
+        """Compute KL divergence of new and old policies."""
         kl = 0
         n = 0
         for batch in self.data_manager.sampler():

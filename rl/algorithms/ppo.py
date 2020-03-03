@@ -27,7 +27,8 @@ class PPOActor(object):
         outs = self.pi(ob, state_in, mask)
         data = {'action': outs.action,
                 'value': outs.value,
-                'logp': outs.dist.log_prob(outs.action)}
+                'logp': outs.dist.log_prob(outs.action),
+                'dist': outs.dist.tensorize()}
         if outs.state_out is not None:
             data['state'] = outs.state_out
         return data
@@ -86,6 +87,19 @@ class PPO(Algorithm):
         self.mse = nn.MSELoss(reduction='none')
 
         self.t = 0
+
+    def compute_kl(self):
+        """Compute KL divergence of new and old policies."""
+        kl = 0
+        n = 0
+        for batch in self.data_manager.sampler():
+            outs = self.pi(batch['obs'])
+            old_dist = outs.dist.__class__(**batch['dist'])
+            k = old_dist.kl(outs.dist).mean()
+            s = batch['action'].shape[0]
+            kl = (n / (n + s)) * kl + (s / (n + s)) * k
+            n += s
+        return kl
 
     def loss(self, batch):
         """Compute loss."""
@@ -152,6 +166,8 @@ class PPO(Algorithm):
                           value_error.mean().cpu().numpy(), self.t, time.time())
         logger.add_scalar('alg/value_error_std',
                           value_error.std().cpu().numpy(), self.t, time.time())
+
+        logger.add_scalar('alg/kl', self.compute_kl(), self.t, time.time())
         return self.t
 
     def evaluate(self):
