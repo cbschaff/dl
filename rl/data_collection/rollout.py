@@ -173,9 +173,9 @@ class RolloutStorage(object):
 
         rollout = nest.map_structure(lambda x: x.data, self.get_rollout())
         n = len(rollout['reward'])
-        if batch_size > n:
-            raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-                             f"number of samples ({n}).")
+        # if batch_size > n:
+        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
+        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
@@ -196,9 +196,9 @@ class RolloutStorage(object):
             raise ValueError(f"Finish rollout before batching data.")
 
         n = self.num_processes
-        if batch_size > n:
-            raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-                             f"number of samples ({n}).")
+        # if batch_size > n:
+        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
+        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
