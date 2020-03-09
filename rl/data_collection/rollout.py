@@ -19,8 +19,8 @@ class RolloutStorage(object):
         'obs', 'action', 'reward', 'done', and 'vpred'
     Any amount of additional data can be provided.
 
-    The data with the 'obs' key may be arbitrarily nested torch
-    tensors. All other data is assumed to be a single torch tensor.
+    'reward', 'done', and 'vpred' are assumed to be a single torch tensor.
+    All other data may be arbitrarily nested torch tensors.
 
     Once all rollout data has been stored, it can be batched and iterated over
     by calling the 'sampler(batch_size)' method.
@@ -173,9 +173,9 @@ class RolloutStorage(object):
 
         rollout = nest.map_structure(lambda x: x.data, self.get_rollout())
         n = len(rollout['reward'])
-        if batch_size > n:
-            raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-                             f"number of samples ({n}).")
+        # if batch_size > n:
+        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
+        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
@@ -196,9 +196,9 @@ class RolloutStorage(object):
             raise ValueError(f"Finish rollout before batching data.")
 
         n = self.num_processes
-        if batch_size > n:
-            raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-                             f"number of samples ({n}).")
+        # if batch_size > n:
+        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
+        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
@@ -206,7 +206,7 @@ class RolloutStorage(object):
             batch = self.get_rollout(indices)
             for k, v in batch.items():
                 if k != 'obs':
-                    batch[k] = v.data
+                    batch[k] = nest.map_structure(lambda x: x.data, v)
             yield batch
 
     def sampler(self, batch_size, recurrent=False):
