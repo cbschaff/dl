@@ -26,6 +26,7 @@ class GameReplay(object):
             shape = [self.n] + list(v.shape[1:])
             self.data[k] = np.zeros(shape, dtype=dtype)
         self.it = 0
+        self.max_it = 0
         self.sample_max = 0
 
     def insert(self, data):
@@ -36,12 +37,14 @@ class GameReplay(object):
         batch_size = data['state'].shape[0]
         end_it = (self.it + batch_size) % self.n
         for k, v in data.items():
-            if end_it < self.it and end_it > 0:
+            if end_it == 0:
+                self.data[k][self.it:] = v
+            elif end_it < self.it:
                 self.data[k][self.it:] = v[:-end_it]
                 self.data[k][:end_it] = v[-end_it:]
             else:
                 self.data[k][self.it:end_it] = v
-        self.max_it = min(self.it + batch_size, self.n)
+        self.max_it = min(self.max_it + batch_size, self.n)
         self.it = end_it
 
     def full(self):
@@ -79,47 +82,40 @@ class SelfPlayManager(object):
         """Init."""
         self.game = game
 
-        def policy(state):
-            s = torch.from_numpy(state).to(device).unsqueeze(0)
-            return pi(s).dist.probs.squeeze(0).cpu().numpy()
+        def policy(state, valid_actions):
+            with torch.no_grad():
+                outs = pi(torch.from_numpy(state).to(device).unsqueeze(0))
+                value = outs.value.squeeze(0).cpu().numpy()
+                logits = outs.dist.logits.squeeze(0)
+                probs = F.softmax(logits[valid_actions], dim=0)
+                p = torch.zeros_like(logits)
+                p[valid_actions] = probs
+                return p.cpu().numpy(), value
+
         self.pi = policy
         self.buffer = game_buffer
+        self.device = device
 
-        def ucb(q, p, ns, nsa):
-            """Calculate upper confidence bounds."""
-            return q + p * np.sqrt(ns) / (nsa + 1)
-
-        def action_selection(ucb, valid_actions):
-            """Pick action with highest ucb."""
-            ucb[np.logical_not(valid_actions)] = -np.inf
-            return np.argmax(ucb)
-
-        self.mcts = MCTS(game, policy, ucb, action_selection)
+        self.mcts = MCTS(game, policy)
 
     def play_game(self, n_sims):
         """Play a self play game."""
         data = {'state': [], 'prob': [], 'value': []}
 
-        state, id = self.game.reset()
-        state, id = self.game.get_canonical_state(state, id)
+        self.mcts.reset()
 
-        while not self.game.game_over(state, id)[0]:
-            self.mcts.reset()
-            for _ in range(n_sims):
-                self.mcts.search(state, id)
-            probs = self.mcts.get_probs(state, id)
-            data['state'].append(state)
-            data['prob'].append(probs)
-            ac = np.choice(range(len(probs)), p=probs)
-            state, id = self.game.move(state, id, ac)
-            state, id = self.game.get_canonical_state(state, id)
-        _, score = self.game.game_over(state, id)
+        while not self.mcts.game_over():
+            self.mcts.search(n_sims)
+            data['state'].append(self.mcts.get_state())
+            data['prob'].append(self.mcts.get_action_probs())
+            self.mcts.act(argmax=False)
+        score = self.mcts.score()
 
         values = []
         game_length = len(data['state'])
         for _ in range(game_length):
-            values.append(score)
             score = -score
+            values.append(score)
         data['value'] = np.asarray(values[::-1]).astype(np.float32)
         data['state'] = np.asarray(data['state'])
         data['prob'] = np.asarray(data['prob'])
@@ -141,12 +137,12 @@ class AlphaZero(object):
 
     def __init__(self,
                  logdir,
-                 policy_fn,
-                 optimizer,
                  game,
+                 policy,
+                 optimizer=torch.optim.Adam,
                  n_simulations=100,
-                 buffer_size=10000,
-                 batch_size=512,
+                 buffer_size=200,
+                 batch_size=64,
                  batches_per_game=1,
                  gpu=True):
         """Init."""
@@ -161,8 +157,8 @@ class AlphaZero(object):
         self.batch_size = batch_size
         self.batches_per_game = batches_per_game
 
-        self.pi = policy_fn(self.env).to(self.device)
-        self.opt = optimizer(self.pi.parameters())
+        self.pi = policy.to(self.device)
+        self.opt = optimizer(self.pi.parameters(), lr=1e-2, weight_decay=1e-4)
 
         self.buffer = GameReplay(buffer_size)
         self.data_manager = SelfPlayManager(self.pi, self.game, self.buffer,
@@ -176,8 +172,8 @@ class AlphaZero(object):
         """Compute Loss."""
         loss = {}
         outs = self.pi(batch['state'])
-        log_probs = F.log_softmax(outs.dist.logits)
-        loss['pi'] = (batch['prob'] * log_probs.T).sum(dim=1)
+        log_probs = F.log_softmax(outs.dist.logits, dim=1)
+        loss['pi'] = -(batch['prob'] * log_probs).sum(dim=1).mean()
         loss['value'] = self.mse(batch['value'], outs.value)
         loss['total'] = loss['pi'] + loss['value']
         return loss
@@ -188,7 +184,7 @@ class AlphaZero(object):
         self.t += self.data_manager.play_game(self.n_sims)
 
         # fill replay buffer if needed
-        if not self.buffer.full():
+        while not self.buffer.full():
             self.t += self.data_manager.play_game(self.n_sims)
 
         for _ in range(self.batches_per_game):
@@ -197,10 +193,40 @@ class AlphaZero(object):
             loss = self.loss(batch)
             loss['total'].backward()
             self.opt.step()
+            for k, v in loss.items():
+                logger.add_scalar(f'loss/{k}', v.detach().cpu().numpy(), self.t,
+                                  time.time())
+        return self.t
 
     def evaluate(self):
         """Evaluate."""
-        pass
+        for _ in range(10):
+            print("Play against random!")
+            state, id = self.game.reset()
+
+            self.pi.eval()
+            while not self.game.game_over(state, id)[0]:
+                print(self.game.to_string(state, id))
+                cs, _ = self.game.get_canonical_state(state, id)
+                valid_actions = self.game.get_valid_actions(state, id)
+                with torch.no_grad():
+                    p, v = self.data_manager.pi(cs, valid_actions)
+                print(f"ALPHAZero thinks the value is: {v * id}")
+                state, id = self.game.move(state, id, np.argmax(p))
+
+                #############################################
+                # Play against random agent. Comment out for self play
+                if self.game.game_over(state, id)[0]:
+                    break
+                print(self.game.to_string(state, id))
+                valid_actions = self.game.get_valid_actions(state, id)
+                acs = [i for i in range(len(valid_actions)) if valid_actions[i]]
+                ac = np.random.choice(acs)
+                state, id = self.game.move(state, id, ac)
+                #############################################
+            print(self.game.to_string(state, id))
+            _, score = self.game.game_over(state, id)
+            print(f"SCORE: {-score}")
 
     def save(self):
         """State dict."""
@@ -234,9 +260,50 @@ class AlphaZero(object):
         buffer_state = nest.flatten(buffer_state)
         self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
                                                           buffer_format))
-        self.data_manager.manual_reset()
         return self.t
 
     def close(self):
         """Close."""
         pass
+
+
+if __name__ == '__main__':
+
+    import unittest
+    import shutil
+    from dl import train
+    from dl.rl.modules import ActorCriticBase, Policy
+    from dl.modules import Categorical
+    from functools import partial
+    from dl.rl.mcts import TicTacToe
+
+    class TicTacToeNet(ActorCriticBase):
+        """Tic Tac Toe Net."""
+
+        def __init__(self):
+            """Build network."""
+            super().__init__(None, None)
+            self.fc1 = nn.Linear(9, 32)
+            self.fc2 = nn.Linear(32, 32)
+            self.vf = nn.Linear(32, 1)
+            self.dist = Categorical(32, 9)
+
+        def forward(self, x):
+            """Forward."""
+            x = F.relu(self.fc1(x.float().view(-1, 9)))
+            x = F.relu(self.fc2(x))
+            return self.dist(x), self.vf(x)
+
+    class TestAlphaZero(unittest.TestCase):
+        """Test case."""
+
+        def test(self):
+            """Test."""
+            def policy_fn():
+                return Policy(TicTacToeNet())
+
+            a0 = partial(AlphaZero, game=TicTacToe(), policy=policy_fn())
+            train('test', a0, maxt=100000, eval=True, eval_period=1000)
+            # shutil.rmtree('test')
+
+    unittest.main()

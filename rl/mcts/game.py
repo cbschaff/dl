@@ -1,6 +1,7 @@
 """Interface for 2-player zero-sum games."""
 import numpy as np
 
+
 class Game(object):
     """Game base class."""
 
@@ -30,10 +31,6 @@ class Game(object):
 
     def to_string(self, state, player):
         """Return a string representation of the state of the game."""
-        raise NotImplementedError
-
-    def from_string(self, s):
-        """Return state and player"""
         raise NotImplementedError
 
 

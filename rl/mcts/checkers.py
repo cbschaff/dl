@@ -7,13 +7,13 @@ class Checkers(Game):
 
     def reset(self):
         """Return start state and player id."""
-        state = np.zeros((8, 8))
-        state[0][[1, 3, 5, 7]] = 1
-        state[1][[0, 2, 4, 6]] = 1
-        state[2][[1, 3, 5, 7]] = 1
-        state[-1][[1, 3, 5, 7]] = -1
-        state[-2][[0, 2, 4, 6]] = -1
-        state[-3][[1, 3, 5, 7]] = -1
+        state = np.zeros((2, 8, 8))
+        state[0, 0][[1, 3, 5, 7]] = 1
+        state[0, 1][[0, 2, 4, 6]] = 1
+        state[0, 2][[1, 3, 5, 7]] = 1
+        state[0, -1][[1, 3, 5, 7]] = -1
+        state[0, -2][[0, 2, 4, 6]] = -1
+        state[0, -3][[1, 3, 5, 7]] = -1
         return state, 1
 
     def get_canonical_state(self, state, player):
@@ -38,8 +38,4 @@ class Checkers(Game):
 
     def to_string(self, state, player):
         """Return a string representation of the state of the game."""
-        raise NotImplementedError
-
-    def from_string(self, s):
-        """Return state and player"""
         raise NotImplementedError

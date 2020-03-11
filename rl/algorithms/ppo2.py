@@ -146,8 +146,7 @@ class PPO2(Algorithm):
     def step(self):
         """Compute rollout, loss, and update model."""
         self.pi.train()
-        rollout_length = self.data_manager.rollout()
-        self.t += rollout_length
+        self.t += self.data_manager.rollout()
         losses = {'pi': [], 'vf': [], 'ent': [], 'kl': [], 'total': [],
                   'kl_pen': []}
 
