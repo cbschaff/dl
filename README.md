@@ -23,3 +23,24 @@ Some key abstractions include:
 * [Alpha Zero](https://science.sciencemag.org/content/362/6419/1140.full?ijkey=XGd77kI6W4rSc&keytype=ref&siteid=sci)
 
 Examples of how to launch experiments can be found [here](https://github.com/cbschaff/dl/tree/master/examples).
+
+### Installation
+
+1. Install [docker](https://www.docker.com/).
+3. In the top level directory, build the docker image by running:
+    ```./build_docker.sh```
+4. Launch the docker container by running:
+    ```./launch_docker.sh```
+    This will start a container and mount the code at /root/pkgs/dl.
+
+### Running Examples
+
+1. From inside the container, run:
+    ```cd /root/pkgs/dl/examples/ppo```
+    (You can replace ppo with another exapmle algorithm)
+2. Run:
+    ```./train.sh```
+    This will create a log directory and start training with the default environment and hyperparameters.
+    Pressing Ctrl-C will interrupt trianing and save the current model.
+3. In another terminal, run:
+    ```tensorboard --logdir /path/to/log/directory```
