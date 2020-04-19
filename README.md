@@ -26,7 +26,8 @@ Examples of how to launch experiments can be found [here](https://github.com/cbs
 
 ### Installation
 
-1. Install [docker](https://www.docker.com/).
+1. Install [docker](https://docs.docker.com/get-docker/).
+1. Install [x-docker](https://github.com/afdaniele/x-docker), a wrapper around docker for running GUI applications inside a container.
 3. In the top level directory, build the docker image by running:
     ```./build_docker.sh```
 4. Launch the docker container by running:

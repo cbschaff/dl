@@ -1,1 +1,1 @@
-docker run --gpus all --net=host -it --rm --privileged -v `pwd`:/root/pkgs/dl dl:latest bash
+sudo x-docker run --gpus all --net=host -it --rm --privileged -v `pwd`:/root/pkgs/dl dl:latest bash

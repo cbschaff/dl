@@ -32,5 +32,9 @@ WORKDIR /root
 # Add a directory for python packages to be mounted
 ENV PYTHONPATH /root/pkgs:$PYTHONPATH
 
+RUN apt-get install -y freeglut3-dev
+RUN conda install -y PyOpenGL
+RUN pip install pygame PyOpenGL_accelerate
+
 # Bash entrypoint
 ENTRYPOINT /bin/bash
