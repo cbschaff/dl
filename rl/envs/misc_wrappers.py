@@ -1,7 +1,7 @@
 """Environment wrappers."""
 from gym import ObservationWrapper, ActionWrapper
 from baselines.common.vec_env import VecEnvWrapper
-from gym.spaces import Box
+from gym.spaces import Box, Tuple
 import numpy as np
 
 
@@ -56,9 +56,9 @@ class VecEpsilonGreedy(VecEnvWrapper):
         """Step."""
         return self.venv.step_wait()
 
-    def reset(self):
+    def reset(self, force=True):
         """Reset."""
-        return self.venv.reset()
+        return self.venv.reset(force=force)
 
 
 if __name__ == '__main__':
@@ -79,3 +79,46 @@ if __name__ == '__main__':
             assert ob.shape == (s[2], s[0], s[1])
 
     unittest.main()
+
+
+class VecActionRewardInObWrapper(VecEnvWrapper):
+    """Add Action and Reward to Observation."""
+
+    def __init__(self, venv, reward_shape=(1,)):
+        super().__init__(venv)
+        self._zero_action = self._get_zero_action(self.action_space)
+        self._zero_reward = np.zeros([self.num_envs] + list(reward_shape),
+                                     dtype=np.float32)
+
+    def _get_zero_action(self, ac_space):
+        if isinstance(ac_space, Tuple):
+            return [self._get_zero_action(a) for a in ac_space.spaces]
+        else:
+            if hasattr(ac_space, 'n'):
+                return np.zeros((self.num_envs, 1), dtype=np.float32)
+            else:
+                return np.zeros((self.num_envs, self.action_space.shape),
+                                dtype=np.float32)
+
+    def reset(self, force=True):
+        ob = self.venv.reset(force=force)
+        return {
+            'ob': ob,
+            'action': self._zero_action,
+            'reward': self._zero_reward
+        }
+
+    def step(self, action):
+        ob, r, done, info = self.venv.step(action)
+        reward = r[:, None] if len(r.shape) == 1 else r
+        ac = action[:, None] if len(action.shape) == 1 else action
+        ob = {
+            'ob': ob,
+            'action': ac.astype(np.float32),
+            'reward': reward.astype(np.float32)
+        }
+        return ob, r, done, info
+
+    def step_wait(self):
+        """Step."""
+        return self.venv.step_wait()

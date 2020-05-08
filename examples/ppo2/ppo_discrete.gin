@@ -20,6 +20,7 @@ PPO2.nenv = 64
 PPO2.eval_num_episodes = 100
 PPO2.record_num_episodes = 0
 PPO2.batch_size = 512
+PPO2.rollout_length = 128
 PPO2.gamma = 0.99
 PPO2.lambda_ = 0.95
 PPO2.norm_advantages = True

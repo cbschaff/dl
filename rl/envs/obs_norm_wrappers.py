@@ -35,6 +35,7 @@ class VecObsNormWrapper(VecEnvWrapper):
         self._eval = False
         self.mean = None
         self.std = None
+        self._dones = np.zeros(self.num_envs, dtype=np.bool)
 
         if mean is not None and std is not None:
             if not nest.has_same_structure(mean, std):
@@ -122,10 +123,10 @@ class VecObsNormWrapper(VecEnvWrapper):
         self._dones = np.logical_or(dones, self._dones)
         return self.norm_and_log(obs), rews, dones, infos
 
-    def reset(self):
+    def reset(self, force=True):
         """Reset."""
-        obs = self.venv.reset()
-        self._dones = np.zeros(self.num_envs, dtype=np.bool)
+        obs = self.venv.reset(force=force)
+        self._dones[:] = False
         return self._normalize(obs)
 
     def step_wait(self):
@@ -147,9 +148,9 @@ if __name__ == '__main__':
             self.observation_space = Tuple([self.observation_space,
                                             self.observation_space])
 
-        def reset(self):
+        def reset(self, force=True):
             """Reset."""
-            ob = self.venv.reset()
+            ob = self.venv.reset(force=force)
             return (ob, ob)
 
         def step_wait(self):

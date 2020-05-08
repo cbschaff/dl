@@ -14,8 +14,7 @@ class RolloutDataManager(object):
         - Handle batching and iterating over rollout data
 
     act_fn:
-        A callable which takes in the observation, recurrent state and
-        mask and returns:
+        A callable which takes in the observation, recurrent state and returns:
             - a dictionary with the data to store in the rollout. 'action'
               and 'value' must be in the dict. Recurrent states must
               be nested under the 'state' key. All values except
@@ -27,6 +26,7 @@ class RolloutDataManager(object):
                  act_fn,
                  device,
                  batch_size=32,
+                 rollout_length=None,
                  gamma=0.99,
                  lambda_=0.95,
                  norm_advantages=False):
@@ -39,8 +39,13 @@ class RolloutDataManager(object):
         self.gamma = gamma
         self.lambda_ = lambda_
         self.norm_advantages = norm_advantages
+        self.rollout_length = rollout_length
 
-        self.storage = RolloutStorage(self.nenv, device=self.device)
+        if rollout_length:
+            self.storage = RolloutStorage(self.nenv, device=self.device,
+                                          num_steps=self.rollout_length)
+        else:
+            self.storage = RolloutStorage(self.nenv, device=self.device)
         self._initialized = False
 
     def init_rollout_storage(self):
@@ -70,6 +75,7 @@ class RolloutDataManager(object):
                                    dtype=s.dtype)
 
             self.init_state = nest.map_structure(_init_state, state)
+            self._state = self.init_state
 
         self._initialized = True
 
@@ -79,9 +85,14 @@ class RolloutDataManager(object):
 
         def _to_torch(o):
             return torch.from_numpy(o).to(self.device)
-        self._ob = nest.map_structure(_to_torch, self.env.reset())
-        self._state = self.init_state
+        self._ob = nest.map_structure(_to_torch, self.env.reset(force=False))
+        if self.rollout_length is None:
+            # In this case, always rollout until the end of the episode
+            # else, state reseting happens in rollout_step.
+            self._state = self.init_state
         self.storage.reset()
+        self._step = 0
+        self._dones = None
 
     def rollout_step(self):
         """Compute one environment step."""
@@ -90,17 +101,16 @@ class RolloutDataManager(object):
                 outs = self.act(self._ob, state_in=self._state)
             else:
                 outs = self.act(self._ob, state_in=None)
-        ob, r, done, _ = self.env.step(outs['action'].cpu().numpy())
+        ob, r, done, infos = self.env.step(outs['action'].cpu().numpy())
         data = {}
         data['obs'] = self._ob
         data['action'] = outs['action']
-        data['reward'] = torch.from_numpy(r).float()
-        data['done'] = torch.from_numpy(done)
+        data['reward'] = torch.from_numpy(r).float().to(self.device)
+        data['done'] = torch.from_numpy(done).to(self.device)
         data['vpred'] = outs['value']
         for key in outs:
             if key not in ['action', 'value', 'state']:
                 data[key] = outs[key]
-        self.storage.insert(data)
 
         def _to_torch(o):
             return torch.from_numpy(o).to(self.device)
@@ -108,6 +118,53 @@ class RolloutDataManager(object):
         self._ob = nest.map_structure(_to_torch, ob)
         if self.recurrent:
             self._state = outs['state']
+
+        self._step += 1
+        truncated = self._get_truncated_envs(infos)
+        if self._dones is not None:
+            prev_step_not_done = torch.logical_not(self._dones)
+            truncated = truncated & prev_step_not_done
+        at_end_of_rollout = (self.rollout_length
+                             and self._step >= self.rollout_length)
+        if at_end_of_rollout or torch.any(truncated):
+            next_vpred = self._get_next_value()
+
+        if self.rollout_length:
+            assert self._step <= self.rollout_length
+        if at_end_of_rollout:
+            self._state_reset(data['done'])
+            to_augment = torch.logical_not(data['done']) | truncated
+            data['done'][:] = True
+        else:
+            to_augment = truncated
+        if torch.any(to_augment):
+            data['reward'][to_augment] += self.gamma * next_vpred[to_augment]
+
+        self._dones = data['done']
+        self.storage.insert(data)
+
+    def _get_truncated_envs(self, infos):
+        truncated = []
+        for info in infos:
+            if 'TimeLimit.truncated' in info:
+                truncated.append(info['TimeLimit.truncated'])
+            else:
+                truncated.append(False)
+        return torch.tensor(truncated, dtype=torch.bool, device=self.device)
+
+    def _get_next_value(self):
+        with torch.no_grad():
+            if self.recurrent:
+                outs = self.act(self._ob, state_in=self._state)
+            else:
+                outs = self.act(self._ob, state_in=None)
+        return outs['value']
+
+    def _state_reset(self, dones):
+        if self.recurrent:
+            def _state_item_reset(x):
+                x[0, dones].zero_()
+            nest.map_structure(_state_item_reset, self._state)
 
     def rollout(self):
         """Compute entire rollout and advantage targets."""
@@ -120,7 +177,8 @@ class RolloutDataManager(object):
 
     def sampler(self):
         """Create sampler to iterate over rollout data."""
-        return self.storage.sampler(self.batch_size, self.recurrent)
+        return self.storage.sampler(self.batch_size, self.recurrent,
+                                    self.device)
 
 
 if __name__ == '__main__':
@@ -226,14 +284,15 @@ if __name__ == '__main__':
             ob, r, done, info = self.venv.step_wait()
             return (ob, ob), r, done, info
 
-    def test(env, base, batch_size, nested):
+    def test(env, base, batch_size, nested, rollout_length):
         pi = Policy(base(env.observation_space,
                          env.action_space))
         if nested:
             env = NestedVecObWrapper(env)
         nenv = env.num_envs
         data_manager = RolloutDataManager(env, RolloutActor(pi), 'cpu',
-                                          batch_size=batch_size)
+                                          batch_size=batch_size,
+                                          rollout_length=rollout_length)
         for _ in range(3):
             data_manager.rollout()
             count = 0
@@ -261,18 +320,34 @@ if __name__ == '__main__':
 
         def test_feed_forward(self):
             """Test feed forward network."""
-            test(env_discrete(2), FeedForwardBase, 8, False)
+            test(env_discrete(2), FeedForwardBase, 8, False, None)
 
         def test_recurrent(self):
             """Test recurrent network."""
-            test(env_discrete(2), RNNBase, 2, False)
+            test(env_discrete(2), RNNBase, 2, False, None)
 
         def test_feed_forward_nested_ob(self):
             """Test feed forward network."""
-            test(env_discrete(2), FeedForwardBase, 8, False)
+            test(env_discrete(2), FeedForwardBase, 8, False, None)
 
         def test_recurrent_nested_ob(self):
             """Test recurrent network."""
-            test(env_discrete(2), RNNBase, 2, False)
+            test(env_discrete(2), RNNBase, 2, False, None)
+
+        def test_feed_forward_fixed_length(self):
+            """Test feed forward network."""
+            test(env_discrete(2), FeedForwardBase, 8, False, 64)
+
+        def test_recurrent_fixed_length(self):
+            """Test recurrent network."""
+            test(env_discrete(2), RNNBase, 2, False, 64)
+
+        def test_feed_forward_nested_ob_fixed_length(self):
+            """Test feed forward network."""
+            test(env_discrete(2), FeedForwardBase, 8, False, 64)
+
+        def test_recurrent_nested_ob_fixed_length(self):
+            """Test recurrent network."""
+            test(env_discrete(2), RNNBase, 2, False, 64)
 
     unittest.main()

@@ -58,14 +58,18 @@ class VecEpisodeLogger(VecEnvWrapper):
         self.rews = np.zeros(self.num_envs, dtype=np.float32)
         self.lens = np.zeros(self.num_envs, dtype=np.int32)
         self._eval = False
-        self._dones = [False for _ in range(self.num_envs)]
-
-    def reset(self):
-        """Reset."""
-        obs = self.venv.reset()
-        self.rews = np.zeros(self.num_envs, dtype=np.float32)
-        self.lens = np.zeros(self.num_envs, dtype=np.int32)
         self._dones = np.zeros(self.num_envs, dtype=np.bool)
+
+    def reset(self, force=True):
+        """Reset."""
+        obs = self.venv.reset(force=force)
+        if force:
+            self.rews[:] = 0
+            self.lens[:] = 0
+        else:
+            self.rews[self._dones] = 0
+            self.lens[self._dones] = 0
+        self._dones[:] = False
         return obs
 
     def step(self, action):

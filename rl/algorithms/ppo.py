@@ -2,7 +2,7 @@
 
 https://arxiv.org/abs/1707.06347
 """
-from dl.rl.envs import VecEpisodeLogger
+from dl.rl.envs import VecEpisodeLogger, VecRewardNormWrapper
 from dl.rl.data_collection import RolloutDataManager
 from dl.rl.modules import Policy
 from dl.rl.util import rl_evaluate, rl_record, misc
@@ -22,9 +22,9 @@ class PPOActor(object):
         """Init."""
         self.pi = pi
 
-    def __call__(self, ob, state_in=None, mask=None):
+    def __call__(self, ob, state_in=None):
         """Produce decision from model."""
-        outs = self.pi(ob, state_in, mask)
+        outs = self.pi(ob, state_in)
         data = {'action': outs.action,
                 'value': outs.value,
                 'logp': outs.dist.log_prob(outs.action),
@@ -45,6 +45,7 @@ class PPO(Algorithm):
                  nenv=1,
                  optimizer=torch.optim.Adam,
                  batch_size=32,
+                 rollout_length=None,
                  gamma=0.99,
                  lambda_=0.95,
                  norm_advantages=False,
@@ -71,7 +72,8 @@ class PPO(Algorithm):
         self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
                                    else 'cpu')
 
-        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
+        self.env = VecEpisodeLogger(VecRewardNormWrapper(env_fn(nenv=nenv),
+                                                         gamma))
 
         self.pi = policy_fn(self.env).to(self.device)
         self.opt = optimizer(self.pi.parameters())
@@ -80,6 +82,7 @@ class PPO(Algorithm):
             PPOActor(self.pi),
             self.device,
             batch_size=batch_size,
+            rollout_length=rollout_length,
             gamma=gamma,
             lambda_=lambda_,
             norm_advantages=norm_advantages)

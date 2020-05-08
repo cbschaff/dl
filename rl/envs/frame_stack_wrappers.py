@@ -14,6 +14,7 @@ class VecFrameStack(VecEnvWrapper):
         self.k = k
         self.observation_space, self.frames = self._get_ob_space_and_frames(
                                                         self.observation_space)
+        self._dones = np.zeros(self.num_envs, dtype=np.bool)
 
     def _get_ob_space_and_frames(self, ob_space):
         if isinstance(ob_space, Tuple):
@@ -38,12 +39,15 @@ class VecFrameStack(VecEnvWrapper):
         frames[:, -shape:] = ob
         return frames
 
-    def reset(self):
+    def reset(self, force=True):
         """Reset."""
-        ob = self.venv.reset()
+        ob = self.venv.reset(force=force)
 
         def _zero_frames(frames):
-            frames[:] = 0
+            if force:
+                frames[:] = 0
+            else:
+                frames[self._dones] = 0
             return frames
 
         def _add_ob(item):
@@ -52,6 +56,7 @@ class VecFrameStack(VecEnvWrapper):
         self.frames = nest.map_structure(_zero_frames, self.frames)
         self.frames = nest.map_structure(_add_ob,
                                          nest.zip_structure(self.frames, ob))
+        self._dones[:] = False
         return nest.map_structure(lambda x: x.copy(), self.frames)
 
     def step(self, action):
@@ -71,6 +76,7 @@ class VecFrameStack(VecEnvWrapper):
         self.frames = nest.map_structure(_add_ob,
                                          nest.zip_structure(self.frames, ob))
         ob = nest.map_structure(lambda x: x.copy(), self.frames)
+        self._dones = np.logical_or(done, self._dones)
         return ob, reward, done, info
 
     def step_wait(self):
@@ -102,9 +108,9 @@ if __name__ == '__main__':
             self.observation_space = Tuple([self.observation_space,
                                             self.observation_space])
 
-        def reset(self):
+        def reset(self, force=True):
             """Reset."""
-            ob = self.venv.reset()
+            ob = self.venv.reset(force=force)
             return (ob, ob)
 
         def step_wait(self):

@@ -32,7 +32,7 @@ def worker(remote, parent_remote, env_fn_wrapper, seed):
             elif cmd == 'get_spaces_spec':
                 remote.send(CloudpickleWrapper((env.observation_space, env.action_space, env.spec)))
             elif cmd == 'get_rng':
-                remote.send(rng.get_state())
+                remote.send(rng.get_state(cuda=False))
             elif cmd == 'get_state':
                 remote.send(env_state_dict(env))
             elif cmd == 'set_rng':
@@ -49,7 +49,7 @@ def worker(remote, parent_remote, env_fn_wrapper, seed):
             cmd, data = remote.recv()
             if cmd == 'get_rng':
                 count += 1
-                remote.send(rng.get_state())
+                remote.send(rng.get_state(cuda=False))
             elif cmd == 'get_state':
                 count += 1
                 remote.send(env_state_dict(env))
@@ -106,19 +106,38 @@ class SubprocVecEnv(VecEnv):
         for i, remote in enumerate(self.remotes):
             if not self._dones[i]:
                 self._last_transitions[i] = remote.recv()
-                self._dones[i] = self._last_transitions[i][2]
             results.append(self._last_transitions[i])
         self.waiting = False
         obs, rews, dones, infos = zip(*results)
+        for i, info in enumerate(infos):
+            info['active'] = self._dones[i]
+            self._dones[i] = self._last_transitions[i][2]
         return _flatten_obs(obs), np.stack(rews), np.stack(dones), infos
 
-    def reset(self):
+    def reset(self, force=True):
+        if not force:
+            return self._reset_done_envs()
         self._assert_not_closed()
         for remote in self.remotes:
             remote.send(('reset', None))
         self._dones = [False for _ in range(self.nenvs)]
         self._last_transitions = [None for _ in range(self.nenvs)]
         obs = [remote.recv() for remote in self.remotes]
+        return _flatten_obs(obs)
+
+    def _reset_done_envs(self):
+        self._assert_not_closed()
+        for i, remote in enumerate(self.remotes):
+            if self._dones[i] or self._last_transitions[i] is None:
+                remote.send(('reset', None))
+        obs = []
+        for i, remote in enumerate(self.remotes):
+            if self._dones[i] or self._last_transitions[i] is None:
+                obs.append(remote.recv())
+                self._dones[i] = False
+                self._last_transitions[i] = None
+            else:
+                obs.append(self._last_transitions[i][0])
         return _flatten_obs(obs)
 
     def close_extras(self):
@@ -249,5 +268,6 @@ if __name__ == "__main__":
                         assert np.allclose(ob[e], obs[e])
                     obs[e] = ob[e]
                 dones = new_dones
+            env.reset(force=False)
 
     unittest.main()

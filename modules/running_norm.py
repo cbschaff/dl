@@ -1,4 +1,4 @@
-"""Running observation normalization.
+"""Running normalization.
 
 https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
 """
@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 
 
-class RunningObNorm(nn.Module):
-    """Normalize observations with running estimates of mean and variance."""
+class RunningNorm(nn.Module):
+    """Normalize with running estimates of mean and variance."""
 
     def __init__(self, ob_shape, eps=1e-5):
         """Init."""
@@ -21,10 +21,13 @@ class RunningObNorm(nn.Module):
         self.eps = eps
         self.std = torch.sqrt(self.var)
 
+    def to(self, *args, **kwargs):
+        out = super().to(*args, **kwargs)
+        self.std = self.std.to(self.var.device)
+        return out
+
     def forward(self, ob):
         """Forward."""
-        if self.std.device != self.mean.device:
-            self.std = self.std.to(self.mean.device)
         return (ob.float() - self.mean) / (self.std + self.eps)
 
     def update(self, batch_mean, batch_var, batch_count):
@@ -40,16 +43,20 @@ class RunningObNorm(nn.Module):
         self.var.copy_(new_var)
         self.std = torch.sqrt(self.var)
 
+    def _load_from_state_dict(self, *args, **kwargs):
+        super()._load_from_state_dict(*args, **kwargs)
+        self.std = torch.sqrt(self.var)
+
 
 if __name__ == '__main__':
     import unittest
 
-    class TestRON(unittest.TestCase):
+    class TestRN(unittest.TestCase):
         """Test."""
 
         def test(self):
             """Test."""
-            ron = RunningObNorm([5, 4])
+            ron = RunningNorm([5, 4])
 
             ob = torch.ones([5, 4])
             assert torch.allclose(ob, ron(ob), atol=2e-5)  # eps is 1e-5

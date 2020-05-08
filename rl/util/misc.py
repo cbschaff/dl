@@ -3,6 +3,41 @@ import numpy as np
 from baselines.common.vec_env import VecEnv, VecEnvWrapper
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from dl import nest
+import torch
+from functools import partial
+
+
+def _discount(x, gamma):
+    n = x.shape[0]
+    out = torch.zeros_like(x)
+    out[-1] = x[-1]
+    for ind in reversed(range(n - 1)):
+        out[ind] = x[ind] + gamma * out[ind + 1]
+    return out
+
+
+def discount(x, gamma):
+    """Return the discounted sum of a sequence."""
+    return nest.map_structure(partial(_discount, gamma=gamma), x)
+
+
+class RewardForwardFilter(object):
+    """Transform rewards to running estimate of returns."""
+
+    def __init__(self, gamma):
+        self.gamma = gamma
+        self.ret = None
+
+    def __call__(self, rews, updates=None):
+        if self.ret is None:
+            self.ret = rews
+        else:
+            if updates is None:
+                self.ret = self.gamma * self.ret + rews
+            else:
+                self.ret[updates] *= self.gamma
+                self.ret[updates] += rews[updates]
+        return self.ret
 
 
 def conv_out_shape(in_shape, conv):

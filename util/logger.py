@@ -103,6 +103,13 @@ def add_image(*args, **kwargs):
     WRITER.flush(force=True)
 
 
+def add_images(*args, **kwargs):
+    """Log to TB. See pytorch documentation for interface."""
+    assert WRITER is not None, "call configure to initialize SummaryWriter"
+    WRITER.add_images(*args, **kwargs)
+    WRITER.flush(force=True)
+
+
 def add_figure(*args, **kwargs):
     """Log to TB. See pytorch documentation for interface."""
     assert WRITER is not None, "call configure to initialize SummaryWriter"

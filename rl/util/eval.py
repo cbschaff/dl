@@ -23,16 +23,17 @@ class Actor(object):
 
     def __call__(self, ob):
         """__call__."""
-        def _to_torch(o):
-            return torch.from_numpy(o).to(self.device)
-        ob = nest.map_structure(_to_torch, ob)
-        if self.state is None:
-            out = self.net(ob)
-        else:
-            out = self.net(ob, self.state)
-        if hasattr(out, 'state_out'):
-            self.state = out.state_out
-        return out.action.cpu().numpy()
+        with torch.no_grad():
+            def _to_torch(o):
+                return torch.from_numpy(o).to(self.device)
+            ob = nest.map_structure(_to_torch, ob)
+            if self.state is None:
+                out = self.net(ob)
+            else:
+                out = self.net(ob, self.state)
+            if hasattr(out, 'state_out'):
+                self.state = out.state_out
+            return out.action.cpu().numpy()
 
 
 def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
@@ -58,8 +59,6 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
     env = ensure_vec_env(env)
     ep_lengths = []
     ep_rewards = []
-    lengths = np.zeros(env.num_envs, dtype=np.int32)
-    rewards = np.zeros(env.num_envs, dtype=np.float32)
     all_infos = []
     actor = Actor(actor, device)
     while len(ep_lengths) < nepisodes:
@@ -68,25 +67,16 @@ def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
         obs = env.reset()
         while not np.all(_dones):
             obs, rs, dones, infos = env.step(actor(obs))
-            rewards += rs * np.logical_not(_dones)
-            lengths += np.logical_not(_dones)
             for i, _ in enumerate(dones):
-                if 'episode_info' in infos[i]:
-                    dones[i] = infos[i]['episode_info']['done']
+                dones[i] = infos[i]['episode_info']['done']
                 if not _dones[i] and save_info:
                     all_infos[-i-1].append(infos[i])
             _dones = np.logical_or(dones, _dones)
 
         # save results
         for i, info in enumerate(infos):
-            if 'episode_info' in infos[i]:
-                ep_lengths.append(infos[i]['episode_info']['length'])
-                ep_rewards.append(infos[i]['episode_info']['reward'])
-            else:
-                ep_lengths.append(int(lengths[i]))
-                ep_rewards.append(float(rewards[i]))
-        lengths[:] = 0
-        rewards[:] = 0.
+            ep_lengths.append(infos[i]['episode_info']['length'])
+            ep_rewards.append(infos[i]['episode_info']['reward'])
 
     outs = {
         'episode_lengths': ep_lengths,
@@ -136,17 +126,19 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
 
     while episodes < nepisodes:
         obs = env.reset()
-        _dones = np.zeros(env.num_envs, dtype=np.bool)
-        ims = [[] for _ in range(env.num_envs)]
+        nenv = min(env.num_envs, nepisodes)
+        _dones = np.zeros(nenv, dtype=np.bool)
+        ims = [[] for _ in range(nenv)]
 
         # collect images
         try:
             rgbs = env.get_images()
-        except Exception:
+        except Exception as e:
+            logger.log(e)
             logger.log("Error while rendering.")
             return
-        for i, rgb in enumerate(rgbs):
-            ims[i].append(rgb)
+        for i in range(nenv):
+            ims[i].append(rgbs[i])
 
         # rollout episodes
         while not np.all(_dones):
@@ -161,13 +153,13 @@ def rl_record(env, actor, nepisodes, outfile, device='cpu', fps=30):
             except Exception:
                 logger.log("Error while rendering.")
                 return
-            for i, rgb in enumerate(rgbs):
+            for i in range(nenv):
                 if not _dones[i]:
-                    ims[i].append(rgb)
-            _dones = np.logical_or(dones, _dones)
+                    ims[i].append(rgbs[i])
+            _dones = np.logical_or(dones[:nenv], _dones)
 
         # save images
-        for i in range(env.num_envs):
+        for i in range(nenv):
             if episodes < nepisodes:
                 id = write_ims(ims[i], id)
                 ims[i] = []

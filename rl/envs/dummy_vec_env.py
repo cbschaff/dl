@@ -43,17 +43,33 @@ class DummyVecEnv(VecEnv):
             self.actions = [actions]
 
     def step_wait(self):
+        active = [False for _ in range(self.num_envs)]
         for e in range(self.num_envs):
             if self.transitions[e] is None or not self.transitions[e][2]:  # if episode is over:
                 self.transitions[e] = self.envs[e].step(self.actions[e])
+                active[e] = True
 
         obs, rs, dones, infos = zip(*self.transitions)
+        for e, info in enumerate(infos):
+            info['active'] = active[e]
         obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
         return obs, np.stack(rs), np.stack(dones), infos
 
-    def reset(self):
+    def reset(self, force=True):
+        if not force:
+            return self._reset_done_envs()
         obs = [self.envs[e].reset() for e in range(self.num_envs)]
         self.transitions = [None for _ in range(self.num_envs)]
+        return nest.map_structure(np.stack, nest.zip_structure(*obs))
+
+    def _reset_done_envs(self):
+        obs = []
+        for e in range(self.num_envs):
+            if self.transitions[e] is None or self.transitions[e][2]:
+                self.transitions[e] = None
+                obs.append(self.envs[e].reset())
+            else:
+                obs.append(self.transitions[e][0])
         return nest.map_structure(np.stack, nest.zip_structure(*obs))
 
     def get_images(self):
@@ -160,6 +176,6 @@ if __name__ == "__main__":
                         assert np.allclose(ob[e], obs[e])
                     obs[e] = ob[e]
                 dones = new_dones
-
+            env.reset(force=False)
 
     unittest.main()

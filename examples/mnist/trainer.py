@@ -128,7 +128,7 @@ class MNISTTrainer(object):
             self.epochs = 0
             return self.epochs
         self.model.load_state_dict(state_dict['model'])
-        self.opt.load_state_dict(state_dict['model'])
+        self.opt.load_state_dict(state_dict['opt'])
         self.sampler.load_state_dict(state_dict['sampler'])
         self.t = state_dict['t']
         self.epochs = state_dict['epochs']

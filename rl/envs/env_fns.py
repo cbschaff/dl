@@ -8,6 +8,7 @@ from dl.rl.envs import SubprocVecEnv
 from dl.rl.envs import DummyVecEnv
 import gin
 import gym
+from gym.wrappers import TimeLimit
 
 
 class StepOnEndOfLifeEnv(gym.Wrapper):
@@ -44,7 +45,8 @@ class StepOnEndOfLifeEnv(gym.Wrapper):
 @gin.configurable(blacklist=['nenv'])
 def make_atari_env(game_name, nenv=1, seed=0, sticky_actions=True,
                    timelimit=True, noop=False, frameskip=4, episode_life=False,
-                   clip_rewards=True, frame_stack=1, scale=False):
+                   clip_rewards=True, frame_stack=1, scale=False,
+                   timelimit_maxsteps=None):
     """Create an Atari environment."""
     id = game_name + 'NoFrameskip'
     id += '-v0' if sticky_actions else '-v4'
@@ -54,6 +56,8 @@ def make_atari_env(game_name, nenv=1, seed=0, sticky_actions=True,
             env = gym.make(id)
             if not timelimit:
                 env = env.env
+            elif timelimit_maxsteps:
+                env = TimeLimit(env.env, timelimit_maxsteps)
             assert 'NoFrameskip' in env.spec.id
             if noop:
                 env = atari_wrappers.NoopResetEnv(env, noop_max=30)

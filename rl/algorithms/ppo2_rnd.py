@@ -1,10 +1,10 @@
-"""PPO RL algorithm.
+"""PPO with Random Network Distillation.
 
 https://arxiv.org/abs/1707.06347
+https://arxiv.org/abs/1810.12894
 """
-from dl.rl.envs import VecEpisodeLogger, VecRewardNormWrapper
-from dl.rl.data_collection import RolloutDataManager
-from dl.rl.util import rl_evaluate, rl_record, misc
+from dl.rl import VecEpisodeLogger, RolloutDataManager, RND, RNDVecEnv
+from dl.rl import rl_evaluate, rl_record, misc
 from dl import logger, Algorithm, Checkpointer
 import gin
 import os
@@ -41,8 +41,8 @@ class PPOActor(object):
 
 
 @gin.configurable(blacklist=['logdir'])
-class PPO2(Algorithm):
-    """PPO algorithm with upgrades.
+class PPO2RND(Algorithm):
+    """PPO with Random Network Distillation.
 
     This version is described in https://arxiv.org/abs/1707.02286 and
     https://github.com/joschu/modular_rl/blob/master/modular_rl/ppo.py
@@ -53,14 +53,19 @@ class PPO2(Algorithm):
                  env_fn,
                  policy_fn,
                  value_fn,
+                 rnd_net,
                  nenv=1,
                  opt_pi=torch.optim.Adam,
                  opt_vf=torch.optim.Adam,
+                 opt_rnd=torch.optim.Adam,
                  batch_size=32,
-                 rollout_length=None,
-                 gamma=0.99,
+                 rollout_length=128,
+                 gamma_ext=0.999,
+                 gamma_int=0.99,
                  lambda_=0.95,
                  ent_coef=0.01,
+                 rnd_coef=0.5,
+                 rnd_subsample_rate=4,
                  norm_advantages=False,
                  epochs_pi=10,
                  epochs_vf=10,
@@ -78,9 +83,13 @@ class PPO2(Algorithm):
         self.eval_num_episodes = eval_num_episodes
         self.record_num_episodes = record_num_episodes
         self.ent_coef = ent_coef
+        self.rnd_coef = rnd_coef
+        self.rnd_subsample_rate = rnd_subsample_rate
+        self.rnd_update_count = 0
         self.epochs_pi = epochs_pi
         self.epochs_vf = epochs_vf
         self.max_grad_norm = max_grad_norm
+        self.norm_advantages = norm_advantages
         self.kl_target = kl_target
         self.initial_kl_weight = 0.2
         self.kl_weight = self.initial_kl_weight
@@ -88,22 +97,26 @@ class PPO2(Algorithm):
         self.device = torch.device('cuda:0' if gpu and torch.cuda.is_available()
                                    else 'cpu')
 
-        self.env = VecEpisodeLogger(VecRewardNormWrapper(env_fn(nenv=nenv),
-                                                         gamma))
+        self.env = VecEpisodeLogger(env_fn(nenv=nenv))
+        self.rnd = RND(rnd_net, opt_rnd, gamma_int,
+                       self.env.observation_space.shape, self.device)
+        self.env = RNDVecEnv(self.env, self.rnd)
 
         self.pi = policy_fn(self.env).to(self.device)
         self.vf = value_fn(self.env).to(self.device)
         self.opt_pi = opt_pi(self.pi.parameters())
         self.opt_vf = opt_vf(self.vf.parameters())
+
+        self.gamma = torch.Tensor([gamma_ext, gamma_int]).to(self.device)
         self.data_manager = RolloutDataManager(
             self.env,
             PPOActor(self.pi, self.vf),
             self.device,
             batch_size=batch_size,
             rollout_length=rollout_length,
-            gamma=gamma,
+            gamma=self.gamma,
             lambda_=lambda_,
-            norm_advantages=norm_advantages)
+            norm_advantages=False)
 
         self.mse = nn.MSELoss()
 
@@ -125,18 +138,18 @@ class PPO2(Algorithm):
     def loss_pi(self, batch):
         """Compute loss."""
         outs = self.pi(batch['obs'])
-
+        atarg = batch['atarg'][:, 0] + self.rnd_coef * batch['atarg'][:, 1]
         # compute policy loss
         logp = outs.dist.log_prob(batch['action'])
         assert logp.shape == batch['logp'].shape
         ratio = torch.exp(logp - batch['logp'])
-        assert ratio.shape == batch['atarg'].shape
+        assert ratio.shape == atarg.shape
 
         old_dist = outs.dist.__class__(**batch['dist'])
         kl = old_dist.kl(outs.dist)
         kl_pen = (kl - 2 * self.kl_target).clamp(min=0).pow(2)
         losses = {}
-        losses['pi'] = -(ratio * batch['atarg']).mean()
+        losses['pi'] = -(ratio * atarg).mean()
         losses['ent'] = -outs.dist.entropy().mean()
         losses['kl'] = kl.mean()
         losses['kl_pen'] = kl_pen.mean()
@@ -145,19 +158,26 @@ class PPO2(Algorithm):
         return losses
 
     def loss_vf(self, batch):
-        return self.mse(self.vf(batch['obs']).value, batch['vtarg'])
+        v = self.vf(batch['obs']).value
+        assert v.shape == batch['vtarg'].shape
+        loss = self.mse(v, batch['vtarg'])
+        return loss
 
     def step(self):
         """Compute rollout, loss, and update model."""
         self.pi.train()
         self.t += self.data_manager.rollout()
         losses = {'pi': [], 'vf': [], 'ent': [], 'kl': [], 'total': [],
-                  'kl_pen': []}
+                  'kl_pen': [], 'rnd': []}
+        if self.norm_advantages:
+            atarg = self.data_manager.storage.data['atarg']
+            atarg = atarg[:, 0] + self.rnd_coef * atarg[:, 1]
+            self.data_manager.storage.data['atarg'][:, 0] -= atarg.mean()
+            self.data_manager.storage.data['atarg'] /= atarg.std() + 1e-5
 
         #######################
         # Update pi
         #######################
-
         kl_too_big = False
         for _ in range(self.epochs_pi):
             if kl_too_big:
@@ -203,6 +223,15 @@ class PPO2(Algorithm):
                                       self.t, time.time())
                 self.opt_vf.step()
 
+        #######################
+        # Update RND
+        #######################
+        for batch in self.data_manager.sampler():
+            self.rnd_update_count += 1
+            if self.rnd_update_count % self.rnd_subsample_rate == 0:
+                loss = self.rnd.update(batch['obs'])
+                losses['rnd'].append(loss.detach().cpu().numpy())
+
         for k, v in losses.items():
             logger.add_scalar(f'loss/{k}', np.mean(v), self.t, time.time())
 
@@ -217,25 +246,33 @@ class PPO2(Algorithm):
 
         logger.add_scalar('alg/kl', kl, self.t, time.time())
         logger.add_scalar('alg/kl_weight', self.kl_weight, self.t, time.time())
+        avg_return = self.data_manager.storage.data['return'][:, 0].mean(dim=0)
+        avg_return = avg_return[0] + self.rnd_coef * avg_return[1]
+        logger.add_scalar('alg/return', avg_return, self.t, time.time())
 
-        data = self.data_manager.storage.get_rollout()
-        value_error = data['vpred'].data - data['q_mc'].data
+        # log value errors
+        errors = []
+        for batch in self.data_manager.sampler():
+            errors.append(batch['vpred'] - batch['q_mc'])
+        errors = torch.cat(errors)
         logger.add_scalar('alg/value_error_mean',
-                          value_error.mean().cpu().numpy(), self.t, time.time())
+                          errors.mean().cpu().numpy(), self.t, time.time())
         logger.add_scalar('alg/value_error_std',
-                          value_error.std().cpu().numpy(), self.t, time.time())
+                          errors.std().cpu().numpy(), self.t, time.time())
+
         return self.t
 
     def evaluate(self):
         """Evaluate model."""
         self.pi.eval()
-        misc.set_env_to_eval_mode(self.env)
+        eval_env = self.env_fn(nenv=self.nenv)
+        misc.set_env_to_eval_mode(eval_env)
 
         # Eval policy
         os.makedirs(os.path.join(self.logdir, 'eval'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'eval',
                                self.ckptr.format.format(self.t) + '.json')
-        stats = rl_evaluate(self.env, self.pi, self.eval_num_episodes,
+        stats = rl_evaluate(eval_env, self.pi, self.eval_num_episodes,
                             outfile, self.device)
         logger.add_scalar('eval/mean_episode_reward', stats['mean_reward'],
                           self.t, time.time())
@@ -246,11 +283,10 @@ class PPO2(Algorithm):
         os.makedirs(os.path.join(self.logdir, 'video'), exist_ok=True)
         outfile = os.path.join(self.logdir, 'video',
                                self.ckptr.format.format(self.t) + '.mp4')
-        rl_record(self.env, self.pi, self.record_num_episodes, outfile,
+        rl_record(eval_env, self.pi, self.record_num_episodes, outfile,
                   self.device)
 
         self.pi.train()
-        misc.set_env_to_train_mode(self.env)
 
     def save(self):
         """State dict."""
@@ -261,6 +297,7 @@ class PPO2(Algorithm):
             'opt_vf': self.opt_vf.state_dict(),
             'kl_weight': self.kl_weight,
             'env': misc.env_state_dict(self.env),
+            'rnd': self.rnd.state_dict(),
             't': self.t
         }
         self.ckptr.save(state_dict, self.t)
@@ -277,6 +314,7 @@ class PPO2(Algorithm):
         self.opt_vf.load_state_dict(state_dict['opt_vf'])
         self.kl_weight = state_dict['kl_weight']
         misc.env_load_state_dict(self.env, state_dict['env'])
+        self.rnd.load_state_dict(state_dict['rnd'])
         self.t = state_dict['t']
         return self.t
 
@@ -300,6 +338,29 @@ if __name__ == '__main__':
     from dl.modules import Categorical
     import torch.nn.functional as F
     from functools import partial
+
+    class RNDNet(nn.Module):
+        """Deep network from https://www.nature.com/articles/nature14236."""
+
+        def __init__(self, shape):
+            """Build network."""
+            super().__init__()
+            self.conv1 = nn.Conv2d(4, 32, 8, 4)
+            self.conv2 = nn.Conv2d(32, 64, 4, 2)
+            self.conv3 = nn.Conv2d(64, 64, 3, 1)
+            shape = shape[1:]
+            for c in [self.conv1, self.conv2, self.conv3]:
+                shape = conv_out_shape(shape, c)
+            self.nunits = 64 * np.prod(shape)
+            self.fc = nn.Linear(self.nunits, 512)
+
+        def forward(self, x):
+            """Forward."""
+            x = x.float() / 255.
+            x = F.relu(self.conv1(x))
+            x = F.relu(self.conv2(x))
+            x = F.relu(self.conv3(x))
+            return self.fc(x.view(-1, self.nunits))
 
     class NatureDQN(PolicyBase):
         """Deep network from https://www.nature.com/articles/nature14236."""
@@ -338,7 +399,7 @@ if __name__ == '__main__':
                 shape = conv_out_shape(shape, c)
             self.nunits = 64 * np.prod(shape)
             self.fc = nn.Linear(self.nunits, 512)
-            self.vf = nn.Linear(512, 1)
+            self.vf = nn.Linear(512, 2)
 
         def forward(self, x):
             """Forward."""
@@ -349,7 +410,7 @@ if __name__ == '__main__':
             x = F.relu(self.fc(x.view(-1, self.nunits)))
             return self.vf(x)
 
-    class TestPPO2(unittest.TestCase):
+    class TestPPO2RND(unittest.TestCase):
         """Test case."""
 
         def test_feed_forward_ppo2(self):
@@ -365,8 +426,9 @@ if __name__ == '__main__':
                 return ValueFunction(NatureDQNVF(env.observation_space,
                                                  env.action_space))
 
-            ppo = partial(PPO2, env_fn=env_fn, policy_fn=policy_fn, value_fn=vf_fn)
-            train('test', ppo, maxt=1000, eval=True, eval_period=1000)
+            ppo = partial(PPO2RND, env_fn=env_fn, policy_fn=policy_fn,
+                          value_fn=vf_fn, rnd_net=RNDNet)
+            train('test', ppo, maxt=100, eval=True, eval_period=100)
             shutil.rmtree('test')
 
     unittest.main()

@@ -1,5 +1,7 @@
 from dl.rl.algorithms.ppo import PPO
 from dl.rl.algorithms.ppo2 import PPO2
+from dl.rl.algorithms.ppo2_rnd import PPO2RND
+from dl.rl.algorithms.ppo2_ngu import PPO2NGU
 from dl.rl.algorithms.dqn import DQN
 from dl.rl.algorithms.ddqn import DoubleDQN
 from dl.rl.algorithms.prdqn import PrioritizedReplayDQN

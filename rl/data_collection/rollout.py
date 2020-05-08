@@ -6,6 +6,7 @@ https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/a2c_ppo_acktr/st
 import torch
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from dl import nest
+from dl.rl import discount
 from functools import partial
 
 
@@ -45,8 +46,8 @@ class RolloutStorage(object):
         self.data = {}
         if step_data['reward'].shape != step_data['vpred'].shape:
             raise ValueError('reward and vpred must have the same shape!')
-        if step_data['reward'].shape != step_data['done'].shape:
-            raise ValueError('reward and done must have the same shape!')
+        # if len(step_data['reward'].shape) != len(step_data['done'].shape):
+        #     raise ValueError('reward and done must have the same dimension!')
 
         def _make_storage(arr, recurrent_key=False):
             shape = [self.num_steps] + list(arr.shape)
@@ -119,7 +120,10 @@ class RolloutStorage(object):
             done = torch.zeros_like(self.data['done'][0])
         else:
             done = self.data['done'][self.step - 1]
-        r = torch.logical_not(done) * step_data['reward'].to(self.device)
+        if len(step_data['reward'].shape) == 2:
+            r = torch.logical_not(done.unsqueeze(-1)) * step_data['reward'].to(self.device)
+        else:
+            r = torch.logical_not(done) * step_data['reward'].to(self.device)
         self.data['return'] += r
 
         self.sequence_lengths += torch.logical_not(step_data['done'].cpu())
@@ -131,28 +135,30 @@ class RolloutStorage(object):
         if not self.rollout_complete:
             raise ValueError("Rollout should be complete before computing "
                              "targets.")
-        max_step = int(torch.max(self.sequence_lengths))
-        self.data['vtarg'][max_step-1] = self.data['reward'][max_step-1]
-        gae = self.data['reward'][max_step-1] - self.data['vpred'][max_step-1]
-        self.data['q_mc'][-1] = self.data['reward'][-1]
-        for step in reversed(range(max_step - 1)):
-            mask = torch.logical_not(self.data['done'][step])
-            if step == 0:
-                mask_prev = torch.ones_like(mask)
-            else:
-                mask_prev = torch.logical_not(self.data['done'][step - 1])
-            delta = (self.data['reward'][step]
-                     + (gamma * mask * self.data['vpred'][step + 1])
-                     - self.data['vpred'][step])
-            gae = mask_prev * (delta + gamma * lambda_ * gae)
-            self.data['atarg'][step].copy_(gae)
-            self.data['q_mc'][step] = (self.data['reward'][step] + mask * gamma
-                                       * self.data['q_mc'][step + 1])
-        self.data['vtarg'] = self.data['atarg'] + self.data['vpred']
+        not_done = torch.logical_not(self.data['done'])
+        if len(self.data['reward'].shape) > len(self.data['done'].shape):
+            not_done = not_done.unsqueeze(-1)
+
+        rews = self.data['reward'].clone()
+        rews[1:] *= not_done[:-1]
+        self.data['q_mc'].copy_(discount(rews, gamma))
+
+        deltas = rews
+        vpreds = self.data['vpred'].clone()
+        vpreds[1:] *= not_done[:-1]
+
+        deltas[:-1] += gamma * vpreds[1:]
+        deltas -= vpreds
+        self.data['atarg'].copy_(discount(deltas, gamma * lambda_))
+        self.data['vtarg'].copy_(self.data['atarg'] + vpreds)
         if norm_advantages:
-            self.data['atarg'] = (self.data['atarg']
-                                  - self.data['atarg'].mean()) / (
-                                        self.data['atarg'].std() + 1e-5)
+            if len(self.data['atarg'].shape) == 2:
+                nr = 1
+            else:
+                nr = self.data['atarg'].shape[-1]
+            at = self.data['atarg'].view(-1, nr)
+            self.data['atarg'] -= at.mean(dim=0)
+            self.data['atarg'] /= at.std(dim=0)
 
     def get_rollout(self, inds=None):
         if inds is None:
@@ -167,15 +173,12 @@ class RolloutStorage(object):
     def rollout_length(self):
         return int(sum(self.sequence_lengths))
 
-    def _feed_forward_generator(self, batch_size):
+    def _feed_forward_generator(self, batch_size, device):
         if not self.rollout_complete:
             raise ValueError(f"Finish rollout before batching data.")
 
         rollout = nest.map_structure(lambda x: x.data, self.get_rollout())
         n = len(rollout['reward'])
-        # if batch_size > n:
-        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
@@ -187,18 +190,17 @@ class RolloutStorage(object):
             for k, v in rollout.items():
                 f = partial(_batch_data, indices=indices)
                 batch[k] = nest.map_structure(f, v)
+            if device and device != self.device:
+                batch = nest.map_structure(lambda x: x.to(device), batch)
             yield batch
 
-    def _recurrent_generator(self, batch_size):
+    def _recurrent_generator(self, batch_size, device):
         """Leave obs as a packed sequence and extract data from other keys."""
 
         if not self.rollout_complete:
             raise ValueError(f"Finish rollout before batching data.")
 
         n = self.num_processes
-        # if batch_size > n:
-        #     raise ValueError(f"Batch size ({batch_size}) is bigger than the "
-        #                      f"number of samples ({n}).")
         sampler = BatchSampler(SubsetRandomSampler(range(n)), batch_size,
                                drop_last=False)
 
@@ -207,14 +209,16 @@ class RolloutStorage(object):
             for k, v in batch.items():
                 if k != 'obs':
                     batch[k] = nest.map_structure(lambda x: x.data, v)
+            if device and device != self.device:
+                batch = nest.map_structure(lambda x: x.to(device), batch)
             yield batch
 
-    def sampler(self, batch_size, recurrent=False):
+    def sampler(self, batch_size, recurrent=False, device=None):
         """Iterate over rollout data."""
         if recurrent:
-            return self._recurrent_generator(batch_size)
+            return self._recurrent_generator(batch_size, device)
         else:
-            return self._feed_forward_generator(batch_size)
+            return self._feed_forward_generator(batch_size, device)
 
 
 if __name__ == '__main__':
@@ -259,6 +263,7 @@ if __name__ == '__main__':
                 assert batch['q_mc'].shape == (2,)
                 print(batch['return'])
                 print(batch['q_mc'])
+                print(batch['atarg'])
 
             for batch in r.sampler(2, recurrent=True):
                 n = batch['obs'].data.shape[0]
@@ -271,5 +276,6 @@ if __name__ == '__main__':
                 assert batch['q_mc'].shape == (n,)
                 print(batch['return'])
                 print(batch['q_mc'])
+                print(batch['atarg'])
 
     unittest.main()

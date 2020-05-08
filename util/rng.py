@@ -3,6 +3,9 @@ import random
 import numpy as np
 import torch
 
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 SEED = None
 
 
@@ -15,10 +18,12 @@ def seed(seed):
     SEED = seed
 
 
-def get_state():
+def get_state(cuda=True):
     """Get random state."""
     s = {}
     s['torch'] = torch.get_rng_state()
+    if torch.cuda.is_available() and cuda:
+        s['torch_cuda'] = torch.cuda.get_rng_state_all()
     s['numpy'] = np.random.get_state()
     s['random'] = random.getstate()
     return s
@@ -29,6 +34,8 @@ def set_state(state):
     torch.set_rng_state(state['torch'])
     np.random.set_state(state['numpy'])
     random.setstate(state['random'])
+    if 'torch_cuda' in state and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(state['torch_cuda'])
 
 
 if __name__ == '__main__':
