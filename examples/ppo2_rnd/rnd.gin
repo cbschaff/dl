@@ -50,6 +50,6 @@ make_atari_env.frameskip = 4
 make_atari_env.episode_life = False
 make_atari_env.clip_rewards = True
 make_atari_env.timelimit = True
-make_atari_env.timelimit_maxsteps = 4000
+make_atari_env.timelimit_maxsteps = 16000
 make_atari_env.scale = False
 make_atari_env.frame_stack = 4

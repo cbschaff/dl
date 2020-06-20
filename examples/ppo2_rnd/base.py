@@ -27,7 +27,7 @@ class RNDNet(nn.Module):
     def forward(self, x):
         """Forward."""
         # Remove frame stack to get a function of only the current observation.
-        x = F.relu(self.conv1(x[:, 0:1]))
+        x = F.relu(self.conv1(x[:, -1:]))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
         return self.fc(x.view(-1, self.nunits))
