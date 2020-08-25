@@ -3,7 +3,7 @@
 https://arxiv.org/abs/1801.01290
 """
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl.modules import TanhNormal
+from dl.modules import TanhNormal, CatDist
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -127,14 +127,18 @@ class SAC(Algorithm):
                                                     self.learning_starts,
                                                     self.update_period)
 
+        self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
         self.automatic_entropy_tuning = automatic_entropy_tuning
         if self.automatic_entropy_tuning:
             if target_entropy:
                 self.target_entropy = target_entropy
             else:
                 # heuristic value from Tuomas
-                self.target_entropy = -np.prod(
-                    self.env.action_space.shape).item()
+                if self.discrete:
+                    self.target_entropy = np.log(1.5)
+                else:
+                    self.target_entropy = -np.prod(
+                        self.env.action_space.shape).item()
             self.log_alpha = torch.zeros(1, requires_grad=True,
                                          device=self.device)
             self.opt_alpha = optimizer([self.log_alpha], lr=policy_lr)
@@ -145,7 +149,6 @@ class SAC(Algorithm):
 
         self.qf_criterion = torch.nn.MSELoss()
         self.vf_criterion = torch.nn.MSELoss()
-        self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
 
         self.t = 0
 
@@ -154,7 +157,7 @@ class SAC(Algorithm):
         pi_out = self.pi(batch['obs'], reparameterization_trick=self.rsample)
         if self.discrete:
             new_ac = pi_out.action
-            logp = pi_out.logp
+            ent = pi_out.dist.entropy()
         else:
             assert isinstance(pi_out.dist, TanhNormal), (
                 "It is strongly encouraged that you use a TanhNormal "
@@ -172,8 +175,11 @@ class SAC(Algorithm):
 
         # alpha loss
         if self.automatic_entropy_tuning:
-            alpha_loss = -(self.log_alpha * (
-                            logp + self.target_entropy).detach()).mean()
+            if self.discrete:
+                ent_error = -ent + self.target_entropy
+            else:
+                ent_error = logp + self.target_entropy
+            alpha_loss = -(self.log_alpha * ent_error.detach()).mean()
             self.opt_alpha.zero_grad()
             alpha_loss.backward()
             self.opt_alpha.step()
@@ -192,25 +198,33 @@ class SAC(Algorithm):
         qf2_loss = self.qf_criterion(q2, qtarg.detach())
 
         # vf loss
-        q1_new = self.qf1(batch['obs'], new_ac).value
+        q1_outs = self.qf1(batch['obs'], new_ac)
+        q1_new = q1_outs.value
         q2_new = self.qf2(batch['obs'], new_ac).value
         q = torch.min(q1_new, q2_new)
-        vtarg = q - alpha * logp
+        if self.discrete:
+            vtarg = q + alpha * ent
+        else:
+            vtarg = q - alpha * logp
         assert v.shape == vtarg.shape
         vf_loss = self.vf_criterion(v, vtarg.detach())
 
         # pi loss
         pi_loss = None
         if self.t % self.policy_update_period == 0:
-            if self.rsample:
-                assert q.shape == logp.shape
-                pi_loss = (alpha*logp - q).mean()
+            if self.discrete:
+                target_dist = CatDist(logits=q1_outs.qvals.detach())
+                pi_dist = CatDist(logits=alpha * pi_out.dist.logits)
+                pi_loss = pi_dist.kl(target_dist).mean()
             else:
-                pi_targ = q - v
-                assert pi_targ.shape == logp.shape
-                pi_loss = (logp * (alpha * logp - pi_targ).detach()).mean()
+                if self.rsample:
+                    assert q.shape == logp.shape
+                    pi_loss = (alpha*logp - q1_new).mean()
+                else:
+                    pi_targ = q1_new - v
+                    assert pi_targ.shape == logp.shape
+                    pi_loss = (logp * (alpha * logp - pi_targ).detach()).mean()
 
-            if not self.discrete:  # continuous action space.
                 pi_loss += self.policy_mean_reg_weight * (
                                             pi_out.dist.normal.mean**2).mean()
 
@@ -223,15 +237,25 @@ class SAC(Algorithm):
                 logger.add_scalar('ent/log_alpha',
                                   self.log_alpha.detach().cpu().numpy(), self.t,
                                   time.time())
-                scalars = {"target": self.target_entropy,
-                           "entropy": -torch.mean(
-                                        logp.detach()).cpu().numpy().item()}
+                if self.discrete:
+                    scalars = {"target": self.target_entropy,
+                               "entropy": ent.mean().detach().cpu().numpy().item()}
+                else:
+                    scalars = {"target": self.target_entropy,
+                               "entropy": -torch.mean(
+                                            logp.detach()).cpu().numpy().item()}
                 logger.add_scalars('ent/entropy', scalars, self.t, time.time())
             else:
-                logger.add_scalar(
-                        'ent/entropy',
-                        -torch.mean(logp.detach()).cpu().numpy().item(),
-                        self.t, time.time())
+                if self.discrete:
+                    logger.add_scalar(
+                            'ent/entropy',
+                            ent.mean().detach().cpu().numpy().item(),
+                            self.t, time.time())
+                else:
+                    logger.add_scalar(
+                            'ent/entropy',
+                            -torch.mean(logp.detach()).cpu().numpy().item(),
+                            self.t, time.time())
             logger.add_scalar('loss/qf1', qf1_loss, self.t, time.time())
             logger.add_scalar('loss/qf2', qf2_loss, self.t, time.time())
             logger.add_scalar('loss/vf', vf_loss, self.t, time.time())

@@ -1,6 +1,6 @@
 """Frame stack environment wrappers."""
 from baselines.common.vec_env import VecEnvWrapper
-from gym.spaces import Box, Tuple
+from gym.spaces import Box, Tuple, Dict
 import numpy as np
 from dl import nest
 
@@ -17,6 +17,13 @@ class VecFrameStack(VecEnvWrapper):
         self._dones = np.zeros(self.num_envs, dtype=np.bool)
 
     def _get_ob_space_and_frames(self, ob_space):
+        if isinstance(ob_space, Dict):
+            space_dict, frames_dict = {}, {}
+            for k, v in ob_space.spaces.items():
+                s, f = self._get_ob_space_and_frames(v)
+                space_dict[k] = s
+                frames_dict[k] = f
+            return Dict(**space_dict), frames_dict
         if isinstance(ob_space, Tuple):
             spaces, frames = list(zip(*[self._get_ob_space_and_frames(s)
                                         for s in ob_space.spaces]))

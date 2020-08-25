@@ -1,8 +1,8 @@
 """Misc utilities."""
 import numpy as np
 from baselines.common.vec_env import VecEnv, VecEnvWrapper
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from dl import nest
+from dl import rl
 import torch
 from functools import partial
 
@@ -73,7 +73,7 @@ def is_vec_env(env):
 def ensure_vec_env(env):
     """Wrap env with DummyVecEnv if it is not a VecEnv."""
     if not is_vec_env(env):
-        env = DummyVecEnv([lambda: env])
+        env = rl.envs.DummyVecEnv([lambda: env])
     return env
 
 
