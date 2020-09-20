@@ -1,4 +1,5 @@
 """Standardize distribution interface and make convenience modules."""
+from dl import nest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,9 +19,11 @@ class CatDist(D.Categorical):
                      - F.log_softmax(other.logits, dim=1))
         return (self.probs * log_ratio).sum(dim=1)
 
-    def tensorize(self):
-        """Return the tensors used to create the distribution."""
+    def to_tensors(self):
         return {'logits': self.logits}
+
+    def from_tensors(self, tensors):
+        return CatDist(**tensors)
 
 
 class Normal(D.Normal):
@@ -44,9 +47,11 @@ class Normal(D.Normal):
               / (2.0 * other.variance)).sum(dim=1)
         return t1 + t2 - 0.5 * self.mean.shape[1]
 
-    def tensorize(self):
-        """Return the tensors used to create the distribution."""
+    def to_tensors(self):
         return {'loc': self.mean, 'scale': self.stddev}
+
+    def from_tensors(self, tensors):
+        return Normal(**tensors)
 
 
 class TanhNormal(D.Distribution):
@@ -107,6 +112,14 @@ class TanhNormal(D.Distribution):
         return torch.zeros([self.normal.mean.shape[0]],
                            device=self.normal.mean.device)
 
+    def to_tensors(self):
+        return {'loc': self.normal.mean,
+                'scale': self.normal.stddev,
+                'epsilon': self.epsilon}
+
+    def from_tensors(self, tensors):
+        return TanhNormal(**tensors)
+
 
 class DeltaDist(D.Distribution):
     """Delta distribution."""
@@ -152,6 +165,63 @@ class DeltaDist(D.Distribution):
         """Reprameterized sample."""
         shape = sample_shape + torch.Size([1 for _ in self._x.shape])
         return self._x.repeat(shape)
+
+    def to_tensors(self):
+        return {'x': self._x}
+
+    def from_tensors(self, tensors):
+        return DeltaDist(**tensors)
+
+
+class ProductDistribution:
+    """product of distributions."""
+
+    def __init__(self, dists):
+        self.dists = dists
+
+    def sample(self):
+        return nest.map_structure(lambda dist: dist.sample(), self.dists)
+
+    def rsample(self):
+        return nest.map_structure(lambda dist: dist.rsample(), self.dists)
+
+    def mode(self):
+        """mode."""
+        return nest.map_structure(lambda dist: dist.mode(), self.dists)
+
+    def log_prob(self, ac):
+        """Log prob."""
+        def _log_prob(item):
+            dist, action = item
+            return dist.log_prob(action)
+
+        log_probs = nest.map_structure(_log_prob,
+                                       nest.zip_structure(self.dists, ac))
+        return sum(nest.flatten(log_probs))
+
+    def entropy(self):
+        """Entropy."""
+        entropies = nest.map_structure(lambda dist: dist.entropy(), self.dists)
+        return sum(nest.flatten(entropies))
+
+    def kl(self, other):
+        "KL divergence."
+        kls = nest.map_structure(lambda dists: dists[0].kl(dists[1]),
+                                 nest.zip_structure(self.dists, other.dists))
+        return sum(nest.flatten(kls))
+
+    def to_tensors(self):
+        flat_dists = nest.flatten(self.dists)
+        return nest.map_structure(lambda dist: dist.to_tensors(), flat_dists)
+
+    def from_tensors(self, tensors):
+        flat_classes = nest.flatten(
+            nest.map_structure(lambda dist: dist.__class__, self.dists)
+        )
+        flat_dists = [D(**t) for D, t in zip(flat_classes, tensors)]
+        return ProductDistribution(nest.pack_sequence_as(
+                                        flat_dists,
+                                        nest.get_structure(self.dists)))
 
 
 """
@@ -343,7 +413,7 @@ if __name__ == '__main__':
             assert dist.log_prob(ac).shape == (2,)
             assert dist.entropy().shape == (2,)
 
-            dist2 = CatDist(**dist.tensorize())
+            dist2 = dist.from_tensors(dist.to_tensors())
             assert torch.allclose(dist.kl(dist2), torch.zeros([1]))
             assert torch.allclose(dist2.kl(dist), torch.zeros([1]))
 
@@ -405,7 +475,7 @@ if __name__ == '__main__':
             dist, logstd = dg(features, return_logstd=True)
             assert torch.allclose(logstd, torch.zeros([1]))
 
-            dist2 = Normal(**dist.tensorize())
+            dist2 = dist.from_tensors(dist.to_tensors())
             assert torch.allclose(dist.kl(dist2), torch.zeros([1]))
             assert torch.allclose(dist2.kl(dist), torch.zeros([1]))
 
@@ -446,5 +516,22 @@ if __name__ == '__main__':
             logp2 = dist.log_prob(ac)
             assert torch.allclose(logp, logp2)
             assert logp.shape == (2,)
+
+        def test_product(self):
+            dg = DiagGaussian(10, 2)
+            features = torch.ones(2, 10)
+            dist = ProductDistribution({'d1': dg(features),
+                                        'd2': dg(2 * features)})
+            ac = dist.sample()
+            assert not ac['d1'].requires_grad
+            assert not ac['d2'].requires_grad
+            assert ac['d1'].shape == (2, 2)
+            assert ac['d2'].shape == (2, 2)
+            assert dist.log_prob(ac).shape == (2,)
+            assert dist.entropy().shape == (2,)
+
+            dist2 = dist.from_tensors(dist.to_tensors())
+            assert torch.allclose(dist.kl(dist2), torch.zeros([1]))
+            assert torch.allclose(dist2.kl(dist), torch.zeros([1]))
 
     unittest.main()

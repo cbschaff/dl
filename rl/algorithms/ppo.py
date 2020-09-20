@@ -28,7 +28,7 @@ class PPOActor(object):
         data = {'action': outs.action,
                 'value': outs.value,
                 'logp': outs.dist.log_prob(outs.action),
-                'dist': outs.dist.tensorize()}
+                'dist': outs.dist.to_tensors()}
         if outs.state_out is not None:
             data['state'] = outs.state_out
         return data
@@ -97,7 +97,7 @@ class PPO(Algorithm):
         n = 0
         for batch in self.data_manager.sampler():
             outs = self.pi(batch['obs'])
-            old_dist = outs.dist.__class__(**batch['dist'])
+            old_dist = outs.dist.from_tensors(batch['dist'])
             k = old_dist.kl(outs.dist).mean()
             s = batch['action'].shape[0]
             kl = (n / (n + s)) * kl + (s / (n + s)) * k

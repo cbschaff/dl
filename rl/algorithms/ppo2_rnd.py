@@ -34,7 +34,7 @@ class PPOActor(object):
         data = {'action': outs.action,
                 'value': outs_vf.value,
                 'logp': outs.dist.log_prob(outs.action),
-                'dist': outs.dist.tensorize()}
+                'dist': outs.dist.to_tensors()}
         if outs.state_out is not None or outs_vf.state_out is not None:
             data['state'] = (outs.state_out, outs_vf.state_out)
         return data
@@ -128,7 +128,7 @@ class PPO2RND(Algorithm):
         n = 0
         for batch in self.data_manager.sampler():
             outs = self.pi(batch['obs'])
-            old_dist = outs.dist.__class__(**batch['dist'])
+            old_dist = outs.dist.from_tensors(batch['dist'])
             k = old_dist.kl(outs.dist).mean().detach().cpu().numpy()
             s = batch['action'].shape[0]
             kl = (n / (n + s)) * kl + (s / (n + s)) * k
@@ -145,7 +145,7 @@ class PPO2RND(Algorithm):
         ratio = torch.exp(logp - batch['logp'])
         assert ratio.shape == atarg.shape
 
-        old_dist = outs.dist.__class__(**batch['dist'])
+        old_dist = outs.dist.from_tensors(batch['dist'])
         kl = old_dist.kl(outs.dist)
         kl_pen = (kl - 2 * self.kl_target).clamp(min=0).pow(2)
         losses = {}
