@@ -136,12 +136,12 @@ if __name__ == '__main__':
             env = VecFrameStack(env, 4)
             ob = env.reset()
             assert ob.shape == (nenv, 4*s[0], s[1], s[2])
-            ob, _, _, _ = env.step([env.action_space.sample()
-                                    for _ in range(nenv)])
+            ob, _, _, _ = env.step(np.array([env.action_space.sample()
+                                             for _ in range(nenv)]))
             assert ob.shape == (nenv, 4*s[0], s[1], s[2])
             while True:
-                ob, _, done, _ = env.step([env.action_space.sample()
-                                           for _ in range(nenv)])
+                ob, _, done, _ = env.step(np.array([env.action_space.sample()
+                                                    for _ in range(nenv)]))
                 assert ob.shape == (nenv, 4*s[0], s[1], s[2])
 
                 for i, d in enumerate(done):
@@ -164,8 +164,8 @@ if __name__ == '__main__':
             assert ob[1][0].shape == (nenv, 4*s[0], s[1], s[2])
             assert ob[1][1].shape == (nenv, 4*s[0], s[1], s[2])
             while True:
-                ob, _, done, _ = env.step([env.action_space.sample()
-                                           for _ in range(nenv)])
+                ob, _, done, _ = env.step(np.array([env.action_space.sample()
+                                                    for _ in range(nenv)]))
                 assert ob[0][0].shape == (nenv, 4*s[0], s[1], s[2])
                 assert ob[0][1].shape == (nenv, 4*s[0], s[1], s[2])
                 assert ob[1][0].shape == (nenv, 4*s[0], s[1], s[2])

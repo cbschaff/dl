@@ -109,12 +109,12 @@ if __name__ == '__main__':
 
             env = NGUVecEnv(env, ngu)
             env.reset()
-            _, r, _, _ = env.step([env.action_space.sample()
-                                   for _ in range(nenv)])
+            _, r, _, _ = env.step(np.array([env.action_space.sample()
+                                            for _ in range(nenv)]))
             assert r.shape == (nenv, 2)
             for _ in range(1000):
-                _, r, done, _ = env.step([env.action_space.sample()
-                                          for _ in range(nenv)])
+                _, r, done, _ = env.step(np.array([env.action_space.sample()
+                                                   for _ in range(nenv)]))
                 assert r.shape == (nenv, 2)
 
                 if np.any(done):

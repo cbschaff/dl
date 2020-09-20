@@ -101,7 +101,9 @@ class RolloutDataManager(object):
                 outs = self.act(self._ob, state_in=self._state)
             else:
                 outs = self.act(self._ob, state_in=None)
-        ob, r, done, infos = self.env.step(outs['action'].cpu().numpy())
+        cpu_action = nest.map_structure(lambda ac: ac.cpu().numpy(),
+                                        outs['action'])
+        ob, r, done, infos = self.env.step(cpu_action)
         data = {}
         data['obs'] = self._ob
         data['action'] = outs['action']

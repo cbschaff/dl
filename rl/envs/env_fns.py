@@ -105,6 +105,7 @@ def make_env(env_id, nenv=1, seed=0, norm_observations=False):
 
 if __name__ == '__main__':
     import unittest
+    import numpy as np
 
     class TestEnvFns(unittest.TestCase):
         """Test."""
@@ -115,26 +116,30 @@ if __name__ == '__main__':
             assert env.spec.id == 'PongNoFrameskip-v0'
             assert env.observation_space.shape == (1, 84, 84)
             assert env.reset().shape == (1, 1, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
+            action = np.array([env.action_space.sample()])
+            assert 'episode_info' in env.step(action)[3][0]
             env.close()
             env = make_atari_env('Breakout', 1, 0, sticky_actions=False)
             assert env.spec.id == 'BreakoutNoFrameskip-v4'
             assert env.observation_space.shape == (1, 84, 84)
             assert env.reset().shape == (1, 1, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
+            action = np.array([env.action_space.sample()])
+            assert 'episode_info' in env.step(action)[3][0]
             env.close()
             env = make_atari_env('Breakout', 1, 0, sticky_actions=False,
                                  frame_stack=4)
             assert env.spec.id == 'BreakoutNoFrameskip-v4'
             assert env.observation_space.shape == (4, 84, 84)
             assert env.reset().shape == (1, 4, 84, 84)
-            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
+            action = np.array([env.action_space.sample()])
+            assert 'episode_info' in env.step(action)[3][0]
             env.close()
 
         def test_env(self):
             """Test env fn."""
             env = make_env('CartPole-v1', 1)
             env.reset()
-            assert 'episode_info' in env.step(env.action_space.sample())[3][0]
+            action = np.array([env.action_space.sample()])
+            assert 'episode_info' in env.step(action)[3][0]
 
     unittest.main()

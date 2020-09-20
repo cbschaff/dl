@@ -76,7 +76,8 @@ if __name__ == '__main__':
             env = VecRewardNormWrapper(env, gamma=0.99)
             env.reset()
             for _ in range(5):
-                out = env.step([env.action_space.sample() for _ in range(nenv)])
+                out = env.step(np.array([env.action_space.sample()
+                                         for _ in range(nenv)]))
                 print(out[1])
             c = env.rn.count
             print(c)
@@ -88,7 +89,8 @@ if __name__ == '__main__':
             env.eval()
             env.reset()
             for _ in range(10):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             env.train()
             assert c == env.rn.count
 

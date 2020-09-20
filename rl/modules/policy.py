@@ -77,9 +77,9 @@ class Policy(nn.Module):
         else:
             return self.outputs(value=value, action=action, dist=dist,
                                 state_out=state_out,
-                                batch_sizes=[action.shape[0]],
-                                sorted_indices=range(action.shape[0]),
-                                unsorted_indices=range(action.shape[0]))
+                                batch_sizes=[0],
+                                sorted_indices=[0],
+                                unsorted_indices=[0])
 
 
 if __name__ == '__main__':

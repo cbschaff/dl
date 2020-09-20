@@ -99,7 +99,7 @@ def _get_venv_ob_norm(env, steps):
     obs = [nest.map_structure(lambda x: x[0], ob)]
     for _ in range(steps):
         ob, _, done, _ = env.step(
-            [env.action_space.sample() for _ in range(env.num_envs)])
+            np.array([env.action_space.sample() for _ in range(env.num_envs)]))
         if done[0]:
             ob = env.reset()
         obs.append(nest.map_structure(lambda x: x[0], ob))

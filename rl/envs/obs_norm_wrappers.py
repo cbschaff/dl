@@ -171,7 +171,8 @@ if __name__ == '__main__':
             env.reset()
             assert env.t == 0
             for _ in range(5):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             state = env.state_dict()
             assert state['t'] == env.t
             assert np.allclose(state['mean'], env.mean)
@@ -183,7 +184,8 @@ if __name__ == '__main__':
             env.eval()
             env.reset()
             for _ in range(10):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             assert env.t == 0
             env.train()
             print(env.mean)
@@ -201,7 +203,8 @@ if __name__ == '__main__':
             env.reset()
             assert env.t == 0
             for _ in range(100):
-                _, _, done, _ = env.step([env.action_space.sample()])
+                _, _, done, _ = env.step(np.array([env.action_space.sample()
+                                                   for _ in range(1)]))
                 if done:
                     env.reset()
             assert env.t == 100
@@ -216,11 +219,11 @@ if __name__ == '__main__':
             env.eval()
             env.reset()
             for _ in range(3):
-                env.step(env.action_space.sample())
+                env.step(np.array([env.action_space.sample()]))
             assert env.t == 0
             env.train()
             for _ in range(3):
-                env.step(env.action_space.sample())
+                env.step(np.array([env.action_space.sample()]))
             assert env.t == 3
             print(env.mean)
             print(env.std)

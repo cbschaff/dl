@@ -94,9 +94,16 @@ class SubprocVecEnv(VecEnv):
 
     def step_async(self, actions):
         self._assert_not_closed()
-        for i, (remote, action) in enumerate(zip(self.remotes, actions)):
+
+        def _numpy_check(ac):
+            if not isinstance(ac, np.ndarray):
+                raise ValueError("You must pass actions as nested numpy arrays"
+                                 " to SubprocVecEnv.")
+        nest.map_structure(_numpy_check, actions)
+        for i, remote in enumerate(self.remotes):
             if self._dones[i]:
                 continue
+            action = nest.map_structure(lambda ac: ac[i], actions)
             remote.send(('step', action))
         self.waiting = True
 
@@ -238,7 +245,8 @@ if __name__ == "__main__":
             assert not np.allclose(obs, obs3)
 
             for _ in range(100):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, done, _ = env.step(actions)
                 ob2, r2, done2, _ = env2.step(actions)
                 assert np.allclose(ob, ob2)
@@ -249,7 +257,8 @@ if __name__ == "__main__":
             env.reset()
             env3.reset()
             for _ in range(100):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, done, _ = env.step(actions)
                 ob3, r3, done3, _ = env3.step(actions)
                 assert np.allclose(ob, ob3)
@@ -260,7 +269,8 @@ if __name__ == "__main__":
             obs = [None for _ in range(nenv)]
             env.reset()
             while not np.all(dones):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, new_dones, _ = env.step(actions)
                 for e, d in enumerate(new_dones):
                     if dones[e]:

@@ -176,7 +176,8 @@ if __name__ == '__main__':
             env = VecEpisodeLogger(env)
             env.reset()
             for _ in range(5000):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             state = env.state_dict()
             assert state['t'] == env.t
             state['t'] = 0
@@ -186,12 +187,14 @@ if __name__ == '__main__':
             env.eval()
             env.reset()
             for _ in range(10):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             assert env.t == 0
             assert np.allclose(env.lens, 10)
             env.train()
             for _ in range(10):
-                env.step([env.action_space.sample() for _ in range(nenv)])
+                env.step(np.array([env.action_space.sample()
+                                   for _ in range(nenv)]))
             assert env.t == 10 * nenv
             assert np.allclose(env.lens, 20)
             logger.flush()

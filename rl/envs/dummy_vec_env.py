@@ -17,7 +17,7 @@ class DummyVecEnv(VecEnv):
     def __init__(self, env_fns):
         """
         Arguments:
-        env_fns: iterable of callables      functions that build environments
+        env_fns: iterable of callables functions that build environments
         """
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
@@ -29,24 +29,20 @@ class DummyVecEnv(VecEnv):
         self.spec = self.envs[0].spec
 
     def step_async(self, actions):
-        listify = True
-        try:
-            if len(actions) == self.num_envs:
-                listify = False
-        except TypeError:
-            pass
-
-        if not listify:
-            self.actions = actions
-        else:
-            assert self.num_envs == 1, "actions {} is either not a list or has a wrong size - cannot match to {} environments".format(actions, self.num_envs)
-            self.actions = [actions]
+        def _numpy_check(ac):
+            if not isinstance(ac, np.ndarray):
+                raise ValueError("You must pass actions as nested numpy arrays"
+                                 " to DummyVecEnv.")
+        nest.map_structure(_numpy_check, actions)
+        self.actions = actions
 
     def step_wait(self):
         active = [False for _ in range(self.num_envs)]
+
         for e in range(self.num_envs):
             if self.transitions[e] is None or not self.transitions[e][2]:  # if episode is over:
-                self.transitions[e] = self.envs[e].step(self.actions[e])
+                action = nest.map_structure(lambda ac: ac[e], self.actions)
+                self.transitions[e] = self.envs[e].step(action)
                 active[e] = True
 
         obs, rs, dones, infos = zip(*self.transitions)
@@ -145,7 +141,8 @@ if __name__ == "__main__":
             assert not np.allclose(obs, obs3)
 
             for _ in range(100):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, done, _ = env.step(actions)
                 ob2, r2, done2, _ = env2.step(actions)
                 assert np.allclose(ob, ob2)
@@ -158,7 +155,8 @@ if __name__ == "__main__":
             assert np.allclose(ob, ob3)
 
             for _ in range(100):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, done, _ = env.step(actions)
                 ob3, r3, done3, _ = env3.step(actions)
                 assert np.allclose(ob, ob3)
@@ -168,7 +166,8 @@ if __name__ == "__main__":
             dones = [False for _ in range(nenv)]
             obs = [None for _ in range(nenv)]
             while not np.all(dones):
-                actions = [env.action_space.sample() for _ in range(nenv)]
+                actions = np.array([env.action_space.sample()
+                                    for _ in range(nenv)])
                 ob, r, new_dones, _ = env.step(actions)
                 for e, d in enumerate(new_dones):
                     if dones[e]:
