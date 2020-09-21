@@ -152,7 +152,7 @@ class PPO2NGU(Algorithm):
             outs = self.pi(batch['obs'])
             old_dist = outs.dist.from_tensors(batch['dist'])
             k = old_dist.kl(outs.dist).mean().detach().cpu().numpy()
-            s = batch['action'].shape[0]
+            s = nest.flatten(batch['action'])[0].shape[0]
             kl = (n / (n + s)) * kl + (s / (n + s)) * k
             n += s
         return kl

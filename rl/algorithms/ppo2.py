@@ -5,7 +5,7 @@ https://arxiv.org/abs/1707.06347
 from dl.rl.envs import VecEpisodeLogger, VecRewardNormWrapper
 from dl.rl.data_collection import RolloutDataManager
 from dl.rl.util import rl_evaluate, rl_record, misc
-from dl import logger, Algorithm, Checkpointer
+from dl import logger, Algorithm, Checkpointer, nest
 import gin
 import os
 import time
@@ -117,7 +117,7 @@ class PPO2(Algorithm):
             outs = self.pi(batch['obs'])
             old_dist = outs.dist.from_tensors(batch['dist'])
             k = old_dist.kl(outs.dist).mean().detach().cpu().numpy()
-            s = batch['action'].shape[0]
+            s = nest.flatten(batch['action'])[0].shape[0]
             kl = (n / (n + s)) * kl + (s / (n + s)) * k
             n += s
         return kl

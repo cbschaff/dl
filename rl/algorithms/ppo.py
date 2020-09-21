@@ -6,7 +6,7 @@ from dl.rl.envs import VecEpisodeLogger, VecRewardNormWrapper
 from dl.rl.data_collection import RolloutDataManager
 from dl.rl.modules import Policy
 from dl.rl.util import rl_evaluate, rl_record, misc
-from dl import logger, Algorithm, Checkpointer
+from dl import logger, Algorithm, Checkpointer, nest
 import gin
 import os
 import time
@@ -99,7 +99,7 @@ class PPO(Algorithm):
             outs = self.pi(batch['obs'])
             old_dist = outs.dist.from_tensors(batch['dist'])
             k = old_dist.kl(outs.dist).mean()
-            s = batch['action'].shape[0]
+            s = nest.flatten(batch['action'])[0].shape[0]
             kl = (n / (n + s)) * kl + (s / (n + s)) * k
             n += s
         return kl
