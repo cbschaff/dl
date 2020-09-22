@@ -215,10 +215,8 @@ class ProductDistribution:
         return nest.map_structure(lambda dist: dist.to_tensors(), flat_dists)
 
     def from_tensors(self, tensors):
-        flat_classes = nest.flatten(
-            nest.map_structure(lambda dist: dist.__class__, self.dists)
-        )
-        flat_dists = [D(**t) for D, t in zip(flat_classes, tensors)]
+        flat_dists = [d.from_tensors(t)
+                      for d, t in zip(nest.flatten(self.dists), tensors)]
         return ProductDistribution(nest.pack_sequence_as(
                                         flat_dists,
                                         nest.get_structure(self.dists)))
