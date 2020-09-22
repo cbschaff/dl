@@ -211,8 +211,7 @@ class ProductDistribution:
         return sum(nest.flatten(kls))
 
     def to_tensors(self):
-        flat_dists = nest.flatten(self.dists)
-        return nest.map_structure(lambda dist: dist.to_tensors(), flat_dists)
+        return [d.to_tensors() for d in nest.flatten(self.dists)]
 
     def from_tensors(self, tensors):
         flat_dists = [d.from_tensors(t)
