@@ -33,7 +33,7 @@ class Actor(object):
                 out = self.net(ob, self.state)
             if hasattr(out, 'state_out'):
                 self.state = out.state_out
-            return out.action.cpu().numpy()
+            return nest.map_structure(lambda x: x.cpu().numpy(), out.action)
 
 
 def rl_evaluate(env, actor, nepisodes, outfile=None, device='cpu',
