@@ -1,5 +1,5 @@
 """Frame stack environment wrappers."""
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 from gym.spaces import Box, Tuple, Dict
 import numpy as np
 from dl import nest
@@ -100,7 +100,6 @@ class VecFrameStack(VecEnvWrapper):
 if __name__ == '__main__':
     import unittest
     from dl.rl.envs import make_atari_env
-    from baselines.common.vec_env import VecEnvWrapper
 
     def make_env(nenv):
         """Create a training environment."""

@@ -1,8 +1,8 @@
 """Adapt SubprocVecEnv to save environment state. Adapted from OpenAI Baselines."""
 
 import numpy as np
-from baselines.common.vec_env import VecEnv
 from dl.rl import env_state_dict, env_load_state_dict
+from dl.rl.util.vec_env import VecEnv
 from dl import nest
 
 

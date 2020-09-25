@@ -5,7 +5,7 @@ https://arxiv.org/abs/1511.05952
 
 from dl.rl.algorithms import DoubleDQN
 from dl.rl.data_collection import PrioritizedReplayBuffer
-from baselines.common.schedules import LinearSchedule
+from dl.rl.util import LinearSchedule
 import gin
 import torch
 import time

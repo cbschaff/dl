@@ -1,5 +1,5 @@
 
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 import torch
 import numpy as np
 
@@ -44,7 +44,6 @@ if __name__ == '__main__':
     import unittest
     from dl.rl.envs import make_env
     from dl.rl.modules import RND
-    from baselines.common.vec_env import VecEnvWrapper
     import torch.nn.functional as F
     import torch.nn as nn
 

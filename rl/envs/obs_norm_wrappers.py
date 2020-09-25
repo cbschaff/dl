@@ -1,5 +1,5 @@
 """Environment Wrapper for normalizing observations."""
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 from dl import logger, nest
 from dl.rl.util import get_ob_norm
 import numpy as np

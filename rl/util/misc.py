@@ -1,6 +1,6 @@
 """Misc utilities."""
 import numpy as np
-from baselines.common.vec_env import VecEnv, VecEnvWrapper
+from dl.rl.util.vec_env import VecEnv, VecEnvWrapper
 from dl import nest
 from dl import rl
 import torch

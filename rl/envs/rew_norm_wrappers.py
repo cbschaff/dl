@@ -1,5 +1,5 @@
 """Environment Wrapper for normalizing observations."""
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 from dl.modules import RunningNorm
 from dl.rl import RewardForwardFilter
 import torch

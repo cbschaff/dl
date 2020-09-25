@@ -1,6 +1,6 @@
 """Environment wrappers."""
 from gym import ObservationWrapper, ActionWrapper
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 from gym.spaces import Box, Tuple
 import numpy as np
 
@@ -49,7 +49,8 @@ class VecEpsilonGreedy(VecEnvWrapper):
     def step(self, actions):
         """Wrap actions."""
         if np.random.rand() < self.epsilon:
-            actions = [self.action_space.sample() for _ in range(self.num_envs)]
+            actions = np.array([self.action_space.sample()
+                                for _ in range(self.num_envs)])
         return self.venv.step(actions)
 
     def step_wait(self):

@@ -189,7 +189,7 @@ if __name__ == '__main__':
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet, Categorical, DiagGaussian
     from gym.spaces import Tuple
-    from baselines.common.vec_env import VecEnvWrapper
+    from dl.rl.util.vec_env import VecEnvWrapper
     from torch.nn.utils.rnn import PackedSequence
     import numpy as np
 

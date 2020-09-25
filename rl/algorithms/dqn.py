@@ -10,9 +10,8 @@ import time
 import torch
 import torch.nn as nn
 import numpy as np
-from dl.rl.util import rl_evaluate, rl_record, misc
+from dl.rl.util import rl_evaluate, rl_record, misc, LinearSchedule
 from dl.rl.envs import VecFrameStack, VecEpsilonGreedy, VecEpisodeLogger
-from baselines.common.schedules import LinearSchedule
 
 
 class EpsilonGreedyActor(object):

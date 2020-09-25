@@ -22,13 +22,6 @@ RUN pip install gin-config
 RUN pip install gym[atari]
 RUN pip install gym[box2d]
 
-WORKDIR /root
-RUN git clone https://github.com/openai/baselines.git
-WORKDIR /root/baselines
-RUN git checkout adba88b218edbb3f3bd8044dc963f8ca0901d6c6
-RUN pip install .
-WORKDIR /root
-
 # Add a directory for python packages to be mounted
 ENV PYTHONPATH /root/pkgs:$PYTHONPATH
 

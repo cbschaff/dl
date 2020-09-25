@@ -1,7 +1,7 @@
 """Environment Wrappers for logging episode stats."""
 
 from gym import Wrapper
-from baselines.common.vec_env import VecEnvWrapper
+from dl.rl.util.vec_env import VecEnvWrapper
 from dl import logger
 import numpy as np
 import time

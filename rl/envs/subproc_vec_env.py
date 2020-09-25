@@ -3,7 +3,7 @@
 import multiprocessing as mp
 
 import numpy as np
-from baselines.common.vec_env.vec_env import VecEnv, CloudpickleWrapper, clear_mpi_env_vars
+from dl.rl.util.vec_env import VecEnv, CloudpickleWrapper, clear_mpi_env_vars
 from dl import rng, nest
 from dl.rl import env_state_dict, env_load_state_dict
 

@@ -102,7 +102,7 @@ if __name__ == '__main__':
     from dl.rl.envs import make_env
     from dl.modules import FeedForwardNet
     from gym.spaces import Tuple
-    from baselines.common.vec_env import VecEnvWrapper
+    from dl.rl.util.vec_env import VecEnvWrapper
 
     class FeedForwardBase(DiscreteQFunctionBase):
         """Feed forward network."""
