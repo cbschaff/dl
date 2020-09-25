@@ -8,7 +8,7 @@ setuptools.setup(
     description="Deep Reinforcement Learning Code",
     url="https://github.com/cbschaff/dl",
     license='MIT',
-    packages=['dl'],
+    packages=setuptools.find_packages(),
     install_requires=[
       'numpy',
       'matplotlib',
