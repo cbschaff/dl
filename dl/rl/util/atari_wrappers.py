@@ -200,7 +200,7 @@ class FrameStack(gym.Wrapper):
 
         See Also
         --------
-        dl.rl.envs.atari_wrappers.LazyFrames
+        dl.rl.util.atari_wrappers.LazyFrames
         """
         gym.Wrapper.__init__(self, env)
         self.k = k

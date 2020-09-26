@@ -1,5 +1,5 @@
 """Set up gin.configurables for environment creation."""
-import dl.rl.envs.atari_wrappers as atari_wrappers
+import dl.rl.util.atari_wrappers as atari_wrappers
 from dl.rl.envs.logging_wrappers import EpisodeInfo
 from dl.rl.envs.misc_wrappers import ImageTranspose
 from dl.rl.envs import VecFrameStack
