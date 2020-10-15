@@ -18,7 +18,7 @@ setuptools.setup(
       'gym',
       'gym[atari]',
       'gym[box2d]',
-      'pyyaml==5.3.1'
+      'pyyaml'
     ],
     zip_safe=False,
 )
