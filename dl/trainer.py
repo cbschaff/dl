@@ -2,7 +2,7 @@
 import gin
 import os
 import time
-from dl import logger, rng
+from dl import logger, rng, HardwareLogger
 
 
 class Algorithm(object):
@@ -47,7 +47,8 @@ def train(logdir,
           eval_period=None,
           save_period=None,
           maxt=None,
-          maxseconds=None):
+          maxseconds=None,
+          hardware_poll_period=1):
     """Basic training loop.
 
     Args:
@@ -68,6 +69,9 @@ def train(logdir,
             The maximum number of timesteps to train the model.
         maxseconds (float):
             The maximum amount of time to train the model.
+        hardware_poll_period (float):
+            The period in seconds at which cpu/gpu stats are polled and logged.
+            Use 'None' to disable logging.
     """
 
     logger.configure(os.path.join(logdir, 'tb'))
@@ -91,6 +95,10 @@ def train(logdir,
     if eval_period:
         last_eval = (t // eval_period) * eval_period
 
+    if hardware_poll_period is not None and hardware_poll_period > 0:
+        hardware_logger = HardwareLogger(delay=hardware_poll_period)
+    else:
+        hardware_logger = None
     try:
         while True:
             if maxt and t >= maxt:
@@ -107,6 +115,8 @@ def train(logdir,
     except KeyboardInterrupt:
         logger.log("Caught Ctrl-C. Saving model and exiting...")
     alg.save()
+    if hardware_logger:
+        hardware_logger.stop()
     logger.flush()
     logger.close()
     alg.close()
