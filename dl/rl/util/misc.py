@@ -92,18 +92,15 @@ def _get_env_ob_norm(env, steps):
 
 
 def _get_venv_ob_norm(env, steps):
-    # Only collect obs from the first environment. This is hacky and
-    # inefficient but is that simplest solution given that environments sync
-    # their resets.
     ob = env.reset()
-    obs = [nest.map_structure(lambda x: x[0], ob)]
-    for _ in range(steps):
+    obs = [ob]
+    for _ in range(steps // env.num_envs):
         ob, _, done, _ = env.step(
             np.array([env.action_space.sample() for _ in range(env.num_envs)]))
-        if done[0]:
-            ob = env.reset()
-        obs.append(nest.map_structure(lambda x: x[0], ob))
-    obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
+        if np.any(done):
+            ob = env.reset(force=False)
+        obs.append(ob)
+    obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
     mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
     std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
     return mean, std
@@ -174,6 +171,9 @@ if __name__ == '__main__':
         def test_state_and_eval_mode(self):
             """Test."""
             env = make_env(2)
+            env.reset()
+            assert env.venv.mean.shape == (1, 84, 84)
+            assert env.venv.std.shape == (1, 84, 84)
             state = env_state_dict(env)
             assert 0 in state and 1 in state
             state[1]['mean'] = 5
