@@ -53,6 +53,9 @@ def worker(remote, parent_remote, env_fn_wrapper, seed):
             elif cmd == 'get_state':
                 count += 1
                 remote.send(env_state_dict(env))
+            elif cmd == 'close':
+                remote.close()
+                break
             elif count == 0:
                 continue
 
@@ -149,9 +152,9 @@ class SubprocVecEnv(VecEnv):
 
     def close_extras(self):
         self.closed = True
-        if self.waiting:
-            for remote in self.remotes:
-                remote.recv()
+        # if self.waiting:
+        #     for remote in self.remotes:
+        #         remote.recv()
         for remote in self.remotes:
             remote.send(('close', None))
         for p in self.ps:
@@ -166,11 +169,15 @@ class SubprocVecEnv(VecEnv):
 
     def state_dict(self):
         for remote in self.remotes:
-            while remote.poll(0.01):
-                remote.recv()
-        for remote in self.remotes:
             remote.send(('get_rng', None))
-        rng_states = [remote.recv() for remote in self.remotes]
+        rng_keys = sorted(list(rng.get_state(cuda=False).keys()))
+
+        def recv_rng(remote):
+            while True:
+                data = remote.recv()
+                if isinstance(data, dict) and rng_keys == sorted(list(data.keys())):
+                    return data
+        rng_states = [recv_rng(remote) for remote in self.remotes]
 
         for remote in self.remotes:
             remote.send(('get_state', None))
@@ -233,7 +240,7 @@ if __name__ == "__main__":
 
         def test(self):
 
-            nenv = 4
+            nenv = 64
             env = make_env(nenv)
             obs = env.reset()
             env2 = make_env(nenv)
@@ -279,5 +286,15 @@ if __name__ == "__main__":
                     obs[e] = ob[e]
                 dones = new_dones
             env.reset(force=False)
+
+            # check to see if state_dict handles interruptions properly
+            env.step_async(actions)
+            state_dict = env.state_dict()
+            rng_keys = sorted(list(rng.get_state(cuda=False).keys()))
+            for s in state_dict['rng_states']:
+                assert rng_keys == list(s.keys())
+            env.close()
+            env2.close()
+            env3.close()
 
     unittest.main()
