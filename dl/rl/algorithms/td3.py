@@ -40,23 +40,13 @@ class TD3Actor(object):
     def __call__(self, obs):
         """Act."""
         with torch.no_grad():
-            action = self.pi(obs, deterministic=True).normed_action
-            noisy_action = self.add_noise_to_action(action)
-            return {'action': self.unnorm_action(noisy_action)}
+            action = self.pi(obs, deterministic=True).action
+            return {'action': self.add_noise_to_action(action)}
 
     def add_noise_to_action(self, action):
         """Add exploration noise."""
         noise = torch.randn_like(action) * self.sigma
         return (action + noise).clamp(-1., 1.)
-
-    def unnorm_action(self, action):
-        """Unnormalize action."""
-        if self.low is None:
-            self.low = torch.from_numpy(self.action_space.low).to(
-                                                            action.device)
-            self.high = torch.from_numpy(self.action_space.high).to(
-                                                            action.device)
-        return (action + 1.0) / 2.0 * (self.high - self.low) + self.low
 
     def update_sigma(self, sigma):
         """Update noise standard deviation."""
@@ -166,17 +156,11 @@ class TD3(Algorithm):
 
         self.t = 0
 
-    def _norm_actions(self, ac):
-        if self.low is not None and self.high is not None:
-            return 2 * (ac - self.low) / (self.high - self.low) - 1.0
-        else:
-            return ac
-
     def loss(self, batch):
         """Loss function."""
         # compute QFunction loss.
         with torch.no_grad():
-            target_action = self.target_pi(batch['next_obs']).normed_action
+            target_action = self.target_pi(batch['next_obs']).action
             noise = (
                      torch.randn_like(target_action) * self.policy_noise
             ).clamp(-self.policy_noise_clip, self.policy_noise_clip)
@@ -187,16 +171,15 @@ class TD3(Algorithm):
             qtarg = self.reward_scale * batch['reward'].float() + (
                     (1.0 - batch['done']) * self.gamma * target_q)
 
-        normed_action = self._norm_actions(batch['action'])
-        q1 = self.qf1(batch['obs'], normed_action).value
-        q2 = self.qf2(batch['obs'], normed_action).value
+        q1 = self.qf1(batch['obs'], batch['action']).value
+        q2 = self.qf2(batch['obs'], batch['action']).value
         assert qtarg.shape == q1.shape
         assert qtarg.shape == q2.shape
         qf_loss = self.qf_criterion(q1, qtarg) + self.qf_criterion(q2, qtarg)
 
         # compute policy loss
         if self.t % self.policy_update_period == 0:
-            action = self.pi(batch['obs'], deterministic=True).normed_action
+            action = self.pi(batch['obs'], deterministic=True).action
             q = self.qf1(batch['obs'], action).value
             pi_loss = -q.mean()
         else:
@@ -324,10 +307,10 @@ if __name__ == '__main__':
     import unittest
     import shutil
     from dl import train
-    from dl.rl.envs import make_env
+    from dl.rl.envs import make_env, ActionNormWrapper
     from dl.rl.modules import QFunction
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
-    from dl.rl.modules import UnnormActionPolicy
+    from dl.rl.modules import Policy
     from dl.modules import Delta
     import torch.nn.functional as F
     from functools import partial
@@ -369,12 +352,11 @@ if __name__ == '__main__':
 
     def env_fn(nenv):
         """Environment function."""
-        return make_env('LunarLanderContinuous-v2', nenv=nenv)
+        return ActionNormWrapper(make_env('LunarLanderContinuous-v2', nenv=nenv))
 
     def policy_fn(env):
         """Create a policy."""
-        return UnnormActionPolicy(PiBase(env.observation_space,
-                                         env.action_space))
+        return Policy(PiBase(env.observation_space, env.action_space))
 
     def qf_fn(env):
         """Create a qfunction."""
@@ -383,7 +365,7 @@ if __name__ == '__main__':
     class TestDDPG(unittest.TestCase):
         """Test case."""
 
-        def test_sac(self):
+        def test_ddpg(self):
             """Test."""
             td3 = partial(TD3,
                           env_fn=env_fn,

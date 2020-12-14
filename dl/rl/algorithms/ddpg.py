@@ -70,13 +70,7 @@ class DDPGActor(object):
                                                             action.device)
             self.high = torch.from_numpy(self.action_space.high).to(
                                                             action.device)
-        normed_action = (2. * (action - self.low) / (self.high - self.low)
-                         - 1.)
-        noisy_normed_action = normed_action + self.noise()
-        noisy_action = ((noisy_normed_action + 1.0) / 2.0
-                        * (self.high - self.low)
-                        + self.low)
-        return torch.max(torch.min(noisy_action, self.high), self.low)
+        return torch.max(torch.min(action + self.noise(), self.high), self.low)
 
     def update_sigma(self, sigma):
         """Update noise standard deviation."""
@@ -183,30 +177,21 @@ class DDPG(Algorithm):
         if self.env.action_space.__class__.__name__ == 'Discrete':
             raise ValueError("Action space must be continuous!")
 
-        self.low = torch.from_numpy(self.env.action_space.low).to(self.device)
-        self.high = torch.from_numpy(self.env.action_space.high).to(self.device)
-
-    def _norm_actions(self, ac):
-        if self.low is not None and self.high is not None:
-            return 2 * (ac - self.low) / (self.high - self.low) - 1.0
-        else:
-            return ac
-
     def loss(self, batch):
         """Loss function."""
         # compute QFunction loss.
         with torch.no_grad():
-            target_action = self.target_pi(batch['next_obs']).normed_action
+            target_action = self.target_pi(batch['next_obs']).action
             target_q = self.target_qf(batch['next_obs'], target_action).value
             qtarg = self.reward_scale * batch['reward'].float() + (
                     (1.0 - batch['done']) * self.gamma * target_q)
 
-        q = self.qf(batch['obs'], self._norm_actions(batch['action'])).value
+        q = self.qf(batch['obs'], batch['action']).value
         assert qtarg.shape == q.shape
         qf_loss = self.qf_criterion(q, qtarg)
 
         # compute policy loss
-        action = self.pi(batch['obs'], deterministic=True).normed_action
+        action = self.pi(batch['obs'], deterministic=True).action
         q = self.qf(batch['obs'], action).value
         pi_loss = -q.mean()
 
@@ -327,10 +312,10 @@ if __name__ == '__main__':
     import unittest
     import shutil
     from dl import train
-    from dl.rl.envs import make_env
+    from dl.rl.envs import make_env, ActionNormWrapper
     from dl.rl.modules import QFunction
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
-    from dl.rl.modules import UnnormActionPolicy
+    from dl.rl.modules import Policy
     from dl.modules import Delta
     import torch.nn.functional as F
     from functools import partial
@@ -372,12 +357,11 @@ if __name__ == '__main__':
 
     def env_fn(nenv):
         """Environment function."""
-        return make_env('LunarLanderContinuous-v2', nenv=nenv)
+        return ActionNormWrapper(make_env('LunarLanderContinuous-v2', nenv=nenv))
 
     def policy_fn(env):
         """Create a policy."""
-        return UnnormActionPolicy(PiBase(env.observation_space,
-                                         env.action_space))
+        return Policy(PiBase(env.observation_space, env.action_space))
 
     def qf_fn(env):
         """Create a qfunction."""

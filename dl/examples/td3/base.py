@@ -1,6 +1,6 @@
 """Defines networks for SAC experiments."""
 from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
-from dl.rl.modules import QFunction, UnnormActionPolicy
+from dl.rl.modules import QFunction, Policy
 from dl.modules import TanhDelta
 import torch
 import torch.nn as nn
@@ -44,8 +44,8 @@ class AppendActionFeedForwardQFBase(ContinuousQFunctionBase):
 @gin.configurable
 def policy_fn(env):
     """Create a policy network."""
-    return UnnormActionPolicy(FeedForwardPolicyBase(env.observation_space,
-                                                    env.action_space))
+    return Policy(FeedForwardPolicyBase(env.observation_space,
+                                        env.action_space))
 
 
 @gin.configurable

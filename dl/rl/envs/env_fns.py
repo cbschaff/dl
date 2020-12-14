@@ -6,6 +6,7 @@ from dl.rl.envs import VecFrameStack
 from dl.rl.envs import VecObsNormWrapper
 from dl.rl.envs import SubprocVecEnv
 from dl.rl.envs import DummyVecEnv
+from dl.rl.envs import ActionNormWrapper
 import gin
 import gym
 from gym.wrappers import TimeLimit
@@ -83,11 +84,13 @@ def make_atari_env(game_name, nenv=1, seed=0, sticky_actions=True,
 
 
 @gin.configurable(blacklist=['nenv'])
-def make_env(env_id, nenv=1, seed=0, norm_observations=False):
+def make_env(env_id, nenv=1, seed=0, norm_observations=False,
+             norm_actions=False):
     """Create an environment."""
     def _env(rank):
         def _thunk():
-            env = gym.make(env_id)
+            if norm_actions:
+                env = ActionNormWrapper(gym.make(env_id))
             env = EpisodeInfo(env)
             env.seed(seed + rank)
             return env

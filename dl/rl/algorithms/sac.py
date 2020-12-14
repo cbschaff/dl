@@ -392,9 +392,9 @@ if __name__ == '__main__':
     import unittest
     import shutil
     from dl import train
-    from dl.rl.envs import make_env
+    from dl.rl.envs import make_env, ActionNormWrapper
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
-    from dl.rl.modules import QFunction, ValueFunction, UnnormActionPolicy
+    from dl.rl.modules import QFunction, ValueFunction, Policy
     from dl.rl.modules import ValueFunctionBase
     from dl.modules import TanhDiagGaussian
     import torch.nn.functional as F
@@ -458,8 +458,7 @@ if __name__ == '__main__':
 
     def policy_fn(env):
         """Create a policy."""
-        return UnnormActionPolicy(PiBase(env.observation_space,
-                                         env.action_space))
+        return Policy(PiBase(env.observation_space, env.action_space))
 
     def qf_fn(env):
         """Create a qfunction."""

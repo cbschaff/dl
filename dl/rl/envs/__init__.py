@@ -1,3 +1,4 @@
+from dl.rl.envs.action_norm_wrapper import ActionNormWrapper
 from dl.rl.envs.frame_stack_wrappers import VecFrameStack
 from dl.rl.envs.logging_wrappers import EpisodeInfo, VecEpisodeLogger
 from dl.rl.envs.misc_wrappers import EpsilonGreedy, VecEpsilonGreedy

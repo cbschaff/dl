@@ -24,6 +24,7 @@ class DummyVecEnv(VecEnv):
         VecEnv.__init__(self, len(env_fns), env.observation_space,
                         env.action_space)
 
+        self.reward_range = env.reward_range
         self.transitions = [None for _ in range(self.num_envs)]
         self.actions = None
         self.spec = self.envs[0].spec

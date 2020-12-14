@@ -39,6 +39,7 @@ optim.Adam.betas = (0.9, 0.999)
 
 make_env.env_id = "LunarLanderContinuous-v2"
 make_env.norm_observations = True
+make_env.norm_actions = True
 
 VecObsNormWrapper.steps = 10000
 VecObsNormWrapper.mean = None

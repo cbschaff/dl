@@ -87,18 +87,18 @@ class VecObsNormWrapper(VecEnvWrapper):
         """Norm observations and log."""
         obs = self._normalize(obs)
         if not self._eval and self.log and self.log_prob > np.random.rand():
-            for i, ob in enumerate(nest.flatten(obs)):
-                percentiles = {
-                    '00': np.quantile(ob, 0.0),
-                    '10': np.quantile(ob, 0.1),
-                    '25': np.quantile(ob, 0.25),
-                    '50': np.quantile(ob, 0.5),
-                    '75': np.quantile(ob, 0.75),
-                    '90': np.quantile(ob, 0.9),
-                    '100': np.quantile(ob, 1.0),
-                }
-                logger.add_scalars(f'ob_stats/{i}_percentiles', percentiles,
-                                   self.t, time.time())
+            flat_ob = np.concatenate([ob.ravel() for ob in nest.flatten(obs)])
+            percentiles = {
+                '00': np.quantile(flat_ob, 0.0),
+                '10': np.quantile(flat_ob, 0.1),
+                '25': np.quantile(flat_ob, 0.25),
+                '50': np.quantile(flat_ob, 0.5),
+                '75': np.quantile(flat_ob, 0.75),
+                '90': np.quantile(flat_ob, 0.9),
+                '100': np.quantile(flat_ob, 1.0),
+            }
+            logger.add_scalars('ob_stats/percentiles', percentiles,
+                               self.t, time.time())
         return obs
 
     def eval(self):

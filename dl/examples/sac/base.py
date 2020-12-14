@@ -1,7 +1,7 @@
 """Defines networks for SAC experiments."""
 from dl.rl.modules import PolicyBase, ContinuousQFunctionBase, ValueFunctionBase
 from dl.rl.modules import DiscreteQFunctionBase, Policy
-from dl.rl.modules import QFunction, ValueFunction, UnnormActionPolicy
+from dl.rl.modules import QFunction, ValueFunction
 from dl.modules import TanhDiagGaussian, Categorical
 import torch
 import torch.nn as nn
@@ -89,13 +89,6 @@ class FeedForwardVFBase(ValueFunctionBase):
 
 @gin.configurable
 def policy_fn(env):
-    """Create a policy network."""
-    return UnnormActionPolicy(FeedForwardPolicyBase(env.observation_space,
-                                                    env.action_space))
-
-
-@gin.configurable
-def policy_fn_discrete(env):
     """Create a policy network."""
     return Policy(FeedForwardPolicyBase(env.observation_space,
                                         env.action_space))
