@@ -89,8 +89,9 @@ def make_env(env_id, nenv=1, seed=0, norm_observations=False,
     """Create an environment."""
     def _env(rank):
         def _thunk():
+            env = gym.make(env_id)
             if norm_actions:
-                env = ActionNormWrapper(gym.make(env_id))
+                env = ActionNormWrapper(env)
             env = EpisodeInfo(env)
             env.seed(seed + rank)
             return env
