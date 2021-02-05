@@ -26,6 +26,12 @@ Examples of how to launch experiments can be found [here](https://github.com/cbs
 
 ### Installation
 
+The code can be installed using docker or using pip.
+
+Pip:
+1. In the top level directory, run ```pip install -e .```
+
+Docker:
 1. Install [docker](https://docs.docker.com/get-docker/).
 1. Install [x-docker](https://github.com/afdaniele/x-docker), a wrapper around docker for running GUI applications inside a container.
 3. In the top level directory, build the docker image by running:
@@ -33,6 +39,7 @@ Examples of how to launch experiments can be found [here](https://github.com/cbs
 4. Launch the docker container by running:
     ```./launch_docker.sh```
     This will start a container and mount the code at /root/pkgs/dl.
+  
 
 ### Running Examples
 
