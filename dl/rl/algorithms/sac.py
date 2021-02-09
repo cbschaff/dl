@@ -219,7 +219,7 @@ class SAC(Algorithm):
             else:
                 if self.rsample:
                     assert q.shape == logp.shape
-                    pi_loss = (alpha*logp - q1_new).mean()
+                    pi_loss = (alpha*logp - q1_new.detach()).mean()
                 else:
                     pi_targ = q1_new - v
                     assert pi_targ.shape == logp.shape
@@ -373,7 +373,8 @@ class SAC(Algorithm):
 
         buffer_format = state_dict['buffer_format']
         buffer_state = dict(np.load(os.path.join(self.ckptr.ckptdir,
-                                                 'buffer.npz')))
+                                                 'buffer.npz'),
+                                    allow_pickle=True))
         buffer_state = nest.flatten(buffer_state)
         self.buffer.load_state_dict(nest.pack_sequence_as(buffer_state,
                                                           buffer_format))
