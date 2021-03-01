@@ -49,9 +49,7 @@ class VecObsNormWrapper(VecEnvWrapper):
 
     def find_norm_params(self):
         """Calculate mean and std with a random policy to collect data."""
-        mean, std = get_ob_norm(self._env(), self.steps)
-        self.mean = mean
-        self.std = nest.map_structure(lambda x: np.maximum(x, self.eps), std)
+        self.mean, self.std = get_ob_norm(self._env(), self.steps, self.eps)
 
     def _normalize(self, obs):
         if not self.should_norm:
@@ -65,7 +63,8 @@ class VecObsNormWrapper(VecEnvWrapper):
 
         def norm(item):
             ob, mean, std = item
-            return (ob - mean) / std
+            if mean is not None:
+                return (ob - mean) / std
         return nest.map_structure(norm, nest.zip_structure(obs, self.mean,
                                                            self.std))
 
@@ -87,7 +86,9 @@ class VecObsNormWrapper(VecEnvWrapper):
         """Norm observations and log."""
         obs = self._normalize(obs)
         if not self._eval and self.log and self.log_prob > np.random.rand():
-            flat_ob = np.concatenate([ob.ravel() for ob in nest.flatten(obs)])
+            flat_ob = np.concatenate([
+                ob.ravel() for ob in nest.flatten(obs) if ob is not None
+            ])
             percentiles = {
                 '00': np.quantile(flat_ob, 0.0),
                 '10': np.quantile(flat_ob, 0.1),
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     import unittest
     import shutil
     from dl.rl.envs import make_env
-    from gym.spaces import Tuple
+    from gym.spaces import Tuple, Discrete
 
     class NestedVecObWrapper(VecEnvWrapper):
         """Nest observations."""
@@ -146,17 +147,18 @@ if __name__ == '__main__':
             """Init."""
             super().__init__(venv)
             self.observation_space = Tuple([self.observation_space,
-                                            self.observation_space])
+                                            self.observation_space,
+                                            Discrete(3)])
 
         def reset(self, force=True):
             """Reset."""
             ob = self.venv.reset(force=force)
-            return (ob, ob)
+            return (ob, ob, np.random.randint(3, size=(self.num_envs,)))
 
         def step_wait(self):
             """Step."""
             ob, r, done, info = self.venv.step_wait()
-            return (ob, ob), r, done, info
+            return (ob, ob, np.random.randint(3, size=(self.num_envs))), r, done, info
 
     class TestObNorm(unittest.TestCase):
         """Test."""
@@ -210,8 +212,6 @@ if __name__ == '__main__':
             assert env.t == 100
             state = env.state_dict()
             assert state['t'] == env.t
-            assert np.allclose(state['mean'], env.mean)
-            assert np.allclose(state['std'], env.std)
             state['t'] = 0
             env.load_state_dict(state)
             assert env.t == 0

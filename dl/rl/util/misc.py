@@ -5,6 +5,7 @@ from dl import nest
 from dl import rl
 import torch
 from functools import partial
+import gym
 
 
 def _discount(x, gamma):
@@ -77,7 +78,36 @@ def ensure_vec_env(env):
     return env
 
 
-def _get_env_ob_norm(env, steps):
+def _compute_mean(item):
+    x, ob_space = item
+    if isinstance(ob_space, gym.spaces.Box):
+        return np.mean(x, axis=0)
+    else:
+        return None
+
+
+def _compute_std(eps):
+    def _f(item):
+        x, ob_space = item
+        if isinstance(ob_space, gym.spaces.Box):
+            return np.maximum(np.std(x, axis=0), eps)
+        else:
+            return None
+    return _f
+
+
+def _unpack_ob_space(ob_space):
+    if isinstance(ob_space, gym.spaces.Dict):
+        return {
+            k: _unpack_ob_space(v) for k, v in ob_space.spaces.items()
+        }
+    elif isinstance(ob_space, gym.spaces.Tuple):
+        return [_unpack_ob_space(space) for space in ob_space.spaces]
+    else:
+        return ob_space
+
+
+def _get_env_ob_norm(env, steps, eps):
     ob = env.reset()
     obs = [ob]
     for _ in range(steps):
@@ -85,13 +115,14 @@ def _get_env_ob_norm(env, steps):
         if done:
             ob = env.reset()
         obs.append(ob)
-    obs = nest.map_structure(np.stack, nest.zip_structure(*obs))
-    mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
-    std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
+    obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
+    data = nest.zip_structure(obs, _unpack_ob_space(env.observation_space))
+    mean = nest.map_structure(_compute_mean, data)
+    std = nest.map_structure(_compute_std(eps), data)
     return mean, std
 
 
-def _get_venv_ob_norm(env, steps):
+def _get_venv_ob_norm(env, steps, eps):
     ob = env.reset()
     obs = [ob]
     for _ in range(steps // env.num_envs):
@@ -100,18 +131,20 @@ def _get_venv_ob_norm(env, steps):
         if np.any(done):
             ob = env.reset(force=False)
         obs.append(ob)
+
     obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
-    mean = nest.map_structure(lambda x: np.mean(x, axis=0), obs)
-    std = nest.map_structure(lambda x: np.std(x, axis=0), obs)
+    data = nest.zip_structure(obs, _unpack_ob_space(env.observation_space))
+    mean = nest.map_structure(_compute_mean, data)
+    std = nest.map_structure(_compute_std(eps), data)
     return mean, std
 
 
-def get_ob_norm(env, steps):
+def get_ob_norm(env, steps, eps=1e-5):
     """Get observation normalization constants."""
     if is_vec_env(env):
-        return _get_venv_ob_norm(env, steps)
+        return _get_venv_ob_norm(env, steps, eps)
     else:
-        return _get_env_ob_norm(env, steps)
+        return _get_env_ob_norm(env, steps, eps)
 
 
 def set_env_to_eval_mode(env):
