@@ -1,7 +1,7 @@
 """Defines networks for SAC experiments."""
-from dl.rl.modules import PolicyBase, ContinuousQFunctionBase, ValueFunctionBase
+from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
 from dl.rl.modules import DiscreteQFunctionBase, Policy
-from dl.rl.modules import QFunction, ValueFunction
+from dl.rl.modules import QFunction
 from dl.modules import TanhDiagGaussian, Categorical
 import torch
 import torch.nn as nn
@@ -69,24 +69,6 @@ class FeedForwardQFBase(DiscreteQFunctionBase):
         return self.qvalue(x)
 
 
-class FeedForwardVFBase(ValueFunctionBase):
-    """Value network."""
-
-    def build(self):
-        """Build."""
-        self.fc1 = nn.Linear(self.observation_space.shape[0], 32)
-        self.fc2 = nn.Linear(32, 32)
-        self.fc3 = nn.Linear(32, 32)
-        self.value = nn.Linear(32, 1)
-
-    def forward(self, x):
-        """Forward."""
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        return self.value(x)
-
-
 @gin.configurable
 def policy_fn(env):
     """Create a policy network."""
@@ -105,10 +87,3 @@ def qf_fn(env):
 def qf_fn_discrete(env):
     """Create a qfunction network."""
     return QFunction(FeedForwardQFBase(env.observation_space, env.action_space))
-
-
-@gin.configurable
-def vf_fn(env):
-    """Create a value function network."""
-    return ValueFunction(FeedForwardVFBase(env.observation_space,
-                                           env.action_space))

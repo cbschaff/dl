@@ -42,7 +42,6 @@ class SAC(Algorithm):
                  env_fn,
                  policy_fn,
                  qf_fn,
-                 vf_fn,
                  nenv=1,
                  optimizer=torch.optim.Adam,
                  buffer_size=10000,
@@ -52,15 +51,13 @@ class SAC(Algorithm):
                  batch_size=256,
                  policy_lr=1e-3,
                  qf_lr=1e-3,
-                 vf_lr=1e-3,
-                 policy_mean_reg_weight=1e-3,
                  gamma=0.99,
                  target_update_period=1,
                  policy_update_period=1,
                  target_smoothing_coef=0.005,
+                 alpha=0.2,
                  automatic_entropy_tuning=True,
                  target_entropy=None,
-                 reward_scale=1,
                  gpu=True,
                  eval_num_episodes=1,
                  record_num_episodes=1,
@@ -88,7 +85,6 @@ class SAC(Algorithm):
         else:
             self.policy_update_period = policy_update_period - (
                                 policy_update_period % self.update_period)
-        self.reward_scale = reward_scale
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
 
@@ -100,22 +96,21 @@ class SAC(Algorithm):
         self.pi = policy_fn(eval_env)
         self.qf1 = qf_fn(eval_env)
         self.qf2 = qf_fn(eval_env)
-        self.vf = vf_fn(eval_env)
-        self.target_vf = vf_fn(eval_env)
+        self.target_qf1 = qf_fn(eval_env)
+        self.target_qf2 = qf_fn(eval_env)
 
         self.pi.to(self.device)
         self.qf1.to(self.device)
         self.qf2.to(self.device)
-        self.vf.to(self.device)
-        self.target_vf.to(self.device)
+        self.target_qf1.to(self.device)
+        self.target_qf2.to(self.device)
 
         self.opt_pi = optimizer(self.pi.parameters(), lr=policy_lr)
         self.opt_qf1 = optimizer(self.qf1.parameters(), lr=qf_lr)
         self.opt_qf2 = optimizer(self.qf2.parameters(), lr=qf_lr)
-        self.opt_vf = optimizer(self.vf.parameters(), lr=vf_lr)
-        self.policy_mean_reg_weight = policy_mean_reg_weight
 
-        self.target_vf.load_state_dict(self.vf.state_dict())
+        self.target_qf1.load_state_dict(self.qf1.state_dict())
+        self.target_qf2.load_state_dict(self.qf2.state_dict())
 
         self.buffer = ReplayBuffer(buffer_size, frame_stack)
         self.data_manager = ReplayBufferDataManager(self.buffer,
@@ -125,6 +120,7 @@ class SAC(Algorithm):
                                                     self.learning_starts,
                                                     self.update_period)
 
+        self.alpha = alpha
         self.automatic_entropy_tuning = automatic_entropy_tuning
         if self.automatic_entropy_tuning:
             if target_entropy:
@@ -144,39 +140,16 @@ class SAC(Algorithm):
             self.log_alpha = None
             self.opt_alpha = None
 
-        self.qf_criterion = torch.nn.MSELoss()
-        self.vf_criterion = torch.nn.MSELoss()
+        self.mse_loss = torch.nn.MSELoss()
 
         self.t = 0
-
-    def get_policy_reg(self, dist):
-        def _sq_mean(dist):
-            return (dist.normal.mean ** 2).mean()
-        if isinstance(dist, ProductDistribution):
-            regs = nest.map_structure(_sq_mean, dist.dists)
-            return sum(nest.flatten(regs))
-        else:
-            return _sq_mean(dist)
-
-    def check_tanh_normal(self, dist):
-        def _check(dist):
-            if not isinstance(dist, TanhNormal):
-                raise ValueError("You must use TanhNormal action distributions "
-                                 "with SAC!")
-        if isinstance(dist, ProductDistribution):
-            nest.map_structure(_check, dist.dists)
-        else:
-            _check(dist)
 
     def loss(self, batch):
         """Loss function."""
         pi_out = self.pi(batch['obs'], reparameterization_trick=True)
-        self.check_tanh_normal(pi_out.dist)
-        new_ac = pi_out.dist.rsample()
-        logp = pi_out.dist.log_prob(new_ac)
+        logp = pi_out.dist.log_prob(pi_out.action)
         q1 = self.qf1(batch['obs'], batch['action']).value
         q2 = self.qf2(batch['obs'], batch['action']).value
-        v = self.vf(batch['obs']).value
 
         # alpha loss
         if self.automatic_entropy_tuning:
@@ -187,35 +160,32 @@ class SAC(Algorithm):
             self.opt_alpha.step()
             alpha = self.log_alpha.exp()
         else:
-            alpha = 1
+            alpha = self.alpha
             alpha_loss = 0
 
         # qf loss
-        vtarg = self.target_vf(batch['next_obs']).value
-        qtarg = self.reward_scale * batch['reward'].float() + (
-                    (1.0 - batch['done']) * self.gamma * vtarg)
+        with torch.no_grad():
+            next_pi_out = self.pi(batch['next_obs'])
+            next_ac_logp = next_pi_out.dist.log_prob(next_pi_out.action)
+            q1_next = self.target_qf1(batch['next_obs'], next_pi_out.action).value
+            q2_next = self.target_qf2(batch['next_obs'], next_pi_out.action).value
+            qnext = torch.min(q1_next, q2_next) - alpha * next_ac_logp
+            qtarg = batch['reward'] + (1.0 - batch['done']) * self.gamma * qnext
+
         assert qtarg.shape == q1.shape
         assert qtarg.shape == q2.shape
-        qf1_loss = self.qf_criterion(q1, qtarg.detach())
-        qf2_loss = self.qf_criterion(q2, qtarg.detach())
-
-        # vf loss
-        q1_outs = self.qf1(batch['obs'], new_ac)
-        q1_new = q1_outs.value
-        q2_new = self.qf2(batch['obs'], new_ac).value
-        q = torch.min(q1_new, q2_new)
-        vtarg = q - alpha * logp
-        assert v.shape == vtarg.shape
-        vf_loss = self.vf_criterion(v, vtarg.detach())
+        qf1_loss = self.mse_loss(q1, qtarg)
+        qf2_loss = self.mse_loss(q2, qtarg)
 
         # pi loss
         pi_loss = None
         if self.t % self.policy_update_period == 0:
-            assert q.shape == logp.shape
-            pi_loss = (
-                (alpha*logp - q1_new.detach()).mean()
-                + self.policy_mean_reg_weight * self.get_policy_reg(pi_out.dist)
-            )
+            with torch.no_grad():
+                q1_pi = self.qf1(batch['obs'], pi_out.action).value
+                q2_pi = self.qf2(batch['obs'], pi_out.action).value
+                min_q_pi = torch.min(q1_pi, q2_pi)
+            assert min_q_pi.shape == logp.shape
+            pi_loss = (alpha * logp - min_q_pi).mean()
 
             # log pi loss about as frequently as other losses
             if self.t % self.log_period < self.policy_update_period:
@@ -237,20 +207,21 @@ class SAC(Algorithm):
                         self.t, time.time())
             logger.add_scalar('loss/qf1', qf1_loss, self.t, time.time())
             logger.add_scalar('loss/qf2', qf2_loss, self.t, time.time())
-            logger.add_scalar('loss/vf', vf_loss, self.t, time.time())
-        return pi_loss, qf1_loss, qf2_loss, vf_loss
+        return pi_loss, qf1_loss, qf2_loss
 
     def step(self):
         """Step optimization."""
         self.t += self.data_manager.step_until_update()
         if self.t % self.target_update_period == 0:
-            soft_target_update(self.target_vf, self.vf,
+            soft_target_update(self.target_qf1, self.qf1,
+                               self.target_smoothing_coef)
+            soft_target_update(self.target_qf2, self.qf2,
                                self.target_smoothing_coef)
 
         if self.t % self.update_period == 0:
             batch = self.data_manager.sample(self.batch_size)
 
-            pi_loss, qf1_loss, qf2_loss, vf_loss = self.loss(batch)
+            pi_loss, qf1_loss, qf2_loss = self.loss(batch)
 
             # update
             self.opt_qf1.zero_grad()
@@ -260,10 +231,6 @@ class SAC(Algorithm):
             self.opt_qf2.zero_grad()
             qf2_loss.backward()
             self.opt_qf2.step()
-
-            self.opt_vf.zero_grad()
-            vf_loss.backward()
-            self.opt_vf.step()
 
             if pi_loss:
                 self.opt_pi.zero_grad()
@@ -305,11 +272,11 @@ class SAC(Algorithm):
             'pi': self.pi.state_dict(),
             'qf1': self.qf1.state_dict(),
             'qf2': self.qf2.state_dict(),
-            'vf': self.vf.state_dict(),
+            'target_qf1': self.target_qf1.state_dict(),
+            'target_qf2': self.target_qf2.state_dict(),
             'opt_pi': self.opt_pi.state_dict(),
             'opt_qf1': self.opt_qf1.state_dict(),
             'opt_qf2': self.opt_qf2.state_dict(),
-            'opt_vf': self.opt_vf.state_dict(),
             'log_alpha': (self.log_alpha if self.automatic_entropy_tuning
                           else None),
             'opt_alpha': (self.opt_alpha.state_dict()
@@ -335,13 +302,12 @@ class SAC(Algorithm):
         self.pi.load_state_dict(state_dict['pi'])
         self.qf1.load_state_dict(state_dict['qf1'])
         self.qf2.load_state_dict(state_dict['qf2'])
-        self.vf.load_state_dict(state_dict['vf'])
-        self.target_vf.load_state_dict(state_dict['vf'])
+        self.target_qf1.load_state_dict(state_dict['target_qf1'])
+        self.target_qf2.load_state_dict(state_dict['target_qf2'])
 
         self.opt_pi.load_state_dict(state_dict['opt_pi'])
         self.opt_qf1.load_state_dict(state_dict['opt_qf1'])
         self.opt_qf2.load_state_dict(state_dict['opt_qf2'])
-        self.opt_vf.load_state_dict(state_dict['opt_vf'])
 
         if state_dict['log_alpha']:
             with torch.no_grad():
@@ -372,10 +338,9 @@ if __name__ == '__main__':
     import unittest
     import shutil
     from dl import train
-    from dl.rl.envs import make_env, ActionNormWrapper
+    from dl.rl.envs import make_env
     from dl.rl.modules import PolicyBase, ContinuousQFunctionBase
-    from dl.rl.modules import QFunction, ValueFunction, Policy
-    from dl.rl.modules import ValueFunctionBase
+    from dl.rl.modules import QFunction, Policy
     from dl.modules import TanhDiagGaussian
     import torch.nn.functional as F
     from functools import partial
@@ -415,23 +380,6 @@ if __name__ == '__main__':
             x = F.relu(self.fc3(x))
             return self.qvalue(x)
 
-    class VFBase(ValueFunctionBase):
-        """Value network."""
-
-        def build(self):
-            """Build Network."""
-            self.fc1 = nn.Linear(self.observation_space.shape[0], 32)
-            self.fc2 = nn.Linear(32, 32)
-            self.fc3 = nn.Linear(32, 32)
-            self.value = nn.Linear(32, 1)
-
-        def forward(self, x):
-            """Forward."""
-            x = F.relu(self.fc1(x))
-            x = F.relu(self.fc2(x))
-            x = F.relu(self.fc3(x))
-            return self.value(x)
-
     def env_fn(nenv):
         """Environment function."""
         return make_env('LunarLanderContinuous-v2', nenv=nenv)
@@ -444,10 +392,6 @@ if __name__ == '__main__':
         """Create a qfunction."""
         return QFunction(QFBase(env.observation_space, env.action_space))
 
-    def vf_fn(env):
-        """Create a value function."""
-        return ValueFunction(VFBase(env.observation_space, env.action_space))
-
     class TestSAC(unittest.TestCase):
         """Test case."""
 
@@ -457,12 +401,10 @@ if __name__ == '__main__':
                           env_fn=env_fn,
                           policy_fn=policy_fn,
                           qf_fn=qf_fn,
-                          vf_fn=vf_fn,
                           learning_starts=300,
                           eval_num_episodes=1,
                           buffer_size=500,
-                          target_update_period=100,
-                          reparameterization_trick=True)
+                          target_update_period=100)
             train('logs', sac, maxt=1000, eval=False, eval_period=1000)
             alg = sac('logs')
             alg.load()

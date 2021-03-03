@@ -75,9 +75,8 @@ class ReplayBuffer(object):
                                  "dict passed to buffer.store_effect.")
         for k in step_data.keys():
             data_k = np.asarray(step_data[k])
-            dtype = data_k.dtype if data_k.dtype == np.float64 else np.float32
             self.data[k] = np.empty([self.size] + list(data_k.shape),
-                                    dtype=dtype)
+                                    dtype=np.float32)
 
     def can_sample(self, batch_size):
         """Check if a batch_size can be sampled.
