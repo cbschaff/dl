@@ -22,6 +22,32 @@ def discount(x, gamma):
     return nest.map_structure(partial(_discount, gamma=gamma), x)
 
 
+def unpack_space(space):
+    """Change gym.spaces.Dict and gym.spaces.Tuple to be dictionaries and
+       tuples."""
+    if isinstance(space, gym.spaces.Dict):
+        return {
+            k: unpack_space(v) for k, v in space.spaces.items()
+        }
+    elif isinstance(space, gym.spaces.Tuple):
+        return [unpack_space(space) for space in space.spaces]
+    else:
+        return space
+
+
+def pack_space(space):
+    """Change nested dictionaries and tuples of gym.spaces.Space objects to
+       gym.spaces.Dict and gym.spaces.Tuple."""
+    if isinstance(space, dict):
+        return gym.spaces.Dict({
+            k: pack_space(v) for k, v in space.items()
+        })
+    elif isinstance(space, (list, tuple)):
+        return gym.spaces.Tuple([pack_space(s) for s in space])
+    else:
+        return space
+
+
 class RewardForwardFilter(object):
     """Transform rewards to running estimate of returns."""
 
@@ -96,17 +122,6 @@ def _compute_std(eps):
     return _f
 
 
-def _unpack_ob_space(ob_space):
-    if isinstance(ob_space, gym.spaces.Dict):
-        return {
-            k: _unpack_ob_space(v) for k, v in ob_space.spaces.items()
-        }
-    elif isinstance(ob_space, gym.spaces.Tuple):
-        return [_unpack_ob_space(space) for space in ob_space.spaces]
-    else:
-        return ob_space
-
-
 def _get_env_ob_norm(env, steps, eps):
     ob = env.reset()
     obs = [ob]
@@ -116,7 +131,7 @@ def _get_env_ob_norm(env, steps, eps):
             ob = env.reset()
         obs.append(ob)
     obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
-    data = nest.zip_structure(obs, _unpack_ob_space(env.observation_space))
+    data = nest.zip_structure(obs, unpack_space(env.observation_space))
     mean = nest.map_structure(_compute_mean, data)
     std = nest.map_structure(_compute_std(eps), data)
     return mean, std
@@ -133,7 +148,7 @@ def _get_venv_ob_norm(env, steps, eps):
         obs.append(ob)
 
     obs = nest.map_structure(np.concatenate, nest.zip_structure(*obs))
-    data = nest.zip_structure(obs, _unpack_ob_space(env.observation_space))
+    data = nest.zip_structure(obs, unpack_space(env.observation_space))
     mean = nest.map_structure(_compute_mean, data)
     std = nest.map_structure(_compute_std(eps), data)
     return mean, std

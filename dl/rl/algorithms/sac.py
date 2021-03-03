@@ -3,7 +3,7 @@
 https://arxiv.org/abs/1801.01290
 """
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl.modules import TanhNormal, CatDist
+from dl.modules import TanhNormal, ProductDistribution
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -59,7 +59,6 @@ class SAC(Algorithm):
                  policy_update_period=1,
                  target_smoothing_coef=0.005,
                  automatic_entropy_tuning=True,
-                 reparameterization_trick=True,
                  target_entropy=None,
                  reward_scale=1,
                  gpu=True,
@@ -89,7 +88,6 @@ class SAC(Algorithm):
         else:
             self.policy_update_period = policy_update_period - (
                                 policy_update_period % self.update_period)
-        self.rsample = reparameterization_trick
         self.reward_scale = reward_scale
         self.target_smoothing_coef = target_smoothing_coef
         self.log_period = log_period
@@ -127,18 +125,17 @@ class SAC(Algorithm):
                                                     self.learning_starts,
                                                     self.update_period)
 
-        self.discrete = self.env.action_space.__class__.__name__ == 'Discrete'
         self.automatic_entropy_tuning = automatic_entropy_tuning
         if self.automatic_entropy_tuning:
             if target_entropy:
                 self.target_entropy = target_entropy
             else:
-                # heuristic value from Tuomas
-                if self.discrete:
-                    self.target_entropy = np.log(1.5)
-                else:
-                    self.target_entropy = -np.prod(
-                        self.env.action_space.shape).item()
+                target_entropies = nest.map_structure(
+                    lambda space: -np.prod(space.shape).item(),
+                    self.env.action_space
+                )
+                self.target_entropy = sum(nest.flatten(target_entropies))
+
             self.log_alpha = torch.zeros(1, requires_grad=True,
                                          device=self.device)
             self.opt_alpha = optimizer([self.log_alpha], lr=policy_lr)
@@ -152,33 +149,38 @@ class SAC(Algorithm):
 
         self.t = 0
 
+    def get_policy_reg(self, dist):
+        def _sq_mean(dist):
+            return (dist.normal.mean ** 2).mean()
+        if isinstance(dist, ProductDistribution):
+            regs = nest.map_structure(_sq_mean, dist.dists)
+            return sum(nest.flatten(regs))
+        else:
+            return _sq_mean(dist)
+
+    def check_tanh_normal(self, dist):
+        def _check(dist):
+            if not isinstance(dist, TanhNormal):
+                raise ValueError("You must use TanhNormal action distributions "
+                                 "with SAC!")
+        if isinstance(dist, ProductDistribution):
+            nest.map_structure(_check, dist.dists)
+        else:
+            _check(dist)
+
     def loss(self, batch):
         """Loss function."""
-        pi_out = self.pi(batch['obs'], reparameterization_trick=self.rsample)
-        if self.discrete:
-            new_ac = pi_out.action
-            ent = pi_out.dist.entropy()
-        else:
-            assert isinstance(pi_out.dist, TanhNormal), (
-                "It is strongly encouraged that you use a TanhNormal "
-                "action distribution for continuous action spaces.")
-            if self.rsample:
-                new_ac, new_pth_ac = pi_out.dist.rsample(
-                                                    return_pretanh_value=True)
-            else:
-                new_ac, new_pth_ac = pi_out.dist.sample(
-                                                    return_pretanh_value=True)
-            logp = pi_out.dist.log_prob(new_ac, new_pth_ac)
+        pi_out = self.pi(batch['obs'], reparameterization_trick=True)
+        self.check_tanh_normal(pi_out.dist)
+        new_ac = pi_out.dist.rsample()
+        logp = pi_out.dist.log_prob(new_ac)
         q1 = self.qf1(batch['obs'], batch['action']).value
         q2 = self.qf2(batch['obs'], batch['action']).value
         v = self.vf(batch['obs']).value
 
         # alpha loss
         if self.automatic_entropy_tuning:
-            if self.discrete:
-                ent_error = -ent + self.target_entropy
-            else:
-                ent_error = logp + self.target_entropy
+            ent_error = logp + self.target_entropy
             alpha_loss = -(self.log_alpha * ent_error.detach()).mean()
             self.opt_alpha.zero_grad()
             alpha_loss.backward()
@@ -202,31 +204,18 @@ class SAC(Algorithm):
         q1_new = q1_outs.value
         q2_new = self.qf2(batch['obs'], new_ac).value
         q = torch.min(q1_new, q2_new)
-        if self.discrete:
-            vtarg = q + alpha * ent
-        else:
-            vtarg = q - alpha * logp
+        vtarg = q - alpha * logp
         assert v.shape == vtarg.shape
         vf_loss = self.vf_criterion(v, vtarg.detach())
 
         # pi loss
         pi_loss = None
         if self.t % self.policy_update_period == 0:
-            if self.discrete:
-                target_dist = CatDist(logits=q1_outs.qvals.detach())
-                pi_dist = CatDist(logits=alpha * pi_out.dist.logits)
-                pi_loss = pi_dist.kl(target_dist).mean()
-            else:
-                if self.rsample:
-                    assert q.shape == logp.shape
-                    pi_loss = (alpha*logp - q1_new.detach()).mean()
-                else:
-                    pi_targ = q1_new - v
-                    assert pi_targ.shape == logp.shape
-                    pi_loss = (logp * (alpha * logp - pi_targ).detach()).mean()
-
-                pi_loss += self.policy_mean_reg_weight * (
-                                            pi_out.dist.normal.mean**2).mean()
+            assert q.shape == logp.shape
+            pi_loss = (
+                (alpha*logp - q1_new.detach()).mean()
+                + self.policy_mean_reg_weight * self.get_policy_reg(pi_out.dist)
+            )
 
             # log pi loss about as frequently as other losses
             if self.t % self.log_period < self.policy_update_period:
@@ -237,25 +226,15 @@ class SAC(Algorithm):
                 logger.add_scalar('ent/log_alpha',
                                   self.log_alpha.detach().cpu().numpy(), self.t,
                                   time.time())
-                if self.discrete:
-                    scalars = {"target": self.target_entropy,
-                               "entropy": ent.mean().detach().cpu().numpy().item()}
-                else:
-                    scalars = {"target": self.target_entropy,
-                               "entropy": -torch.mean(
-                                            logp.detach()).cpu().numpy().item()}
+                scalars = {"target": self.target_entropy,
+                           "entropy": -torch.mean(
+                                        logp.detach()).cpu().numpy().item()}
                 logger.add_scalars('ent/entropy', scalars, self.t, time.time())
             else:
-                if self.discrete:
-                    logger.add_scalar(
-                            'ent/entropy',
-                            ent.mean().detach().cpu().numpy().item(),
-                            self.t, time.time())
-                else:
-                    logger.add_scalar(
-                            'ent/entropy',
-                            -torch.mean(logp.detach()).cpu().numpy().item(),
-                            self.t, time.time())
+                logger.add_scalar(
+                        'ent/entropy',
+                        -torch.mean(logp.detach()).cpu().numpy().item(),
+                        self.t, time.time())
             logger.add_scalar('loss/qf1', qf1_loss, self.t, time.time())
             logger.add_scalar('loss/qf2', qf2_loss, self.t, time.time())
             logger.add_scalar('loss/vf', vf_loss, self.t, time.time())

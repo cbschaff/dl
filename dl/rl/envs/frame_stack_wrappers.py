@@ -1,5 +1,5 @@
 """Frame stack environment wrappers."""
-from dl.rl.util.vec_env import VecEnvWrapper
+from dl.rl import VecEnvWrapper, pack_space, unpack_space
 from gym.spaces import Box, Tuple, Dict
 import numpy as np
 from dl import nest
@@ -17,28 +17,27 @@ class VecFrameStack(VecEnvWrapper):
         self._dones = np.zeros(self.num_envs, dtype=np.bool)
 
     def _get_ob_space_and_frames(self, ob_space):
-        if isinstance(ob_space, Dict):
-            space_dict, frames_dict = {}, {}
-            for k, v in ob_space.spaces.items():
-                s, f = self._get_ob_space_and_frames(v)
-                space_dict[k] = s
-                frames_dict[k] = f
-            return Dict(**space_dict), frames_dict
-        if isinstance(ob_space, Tuple):
-            spaces, frames = list(zip(*[self._get_ob_space_and_frames(s)
-                                        for s in ob_space.spaces]))
-            return Tuple(spaces), frames
-        elif isinstance(ob_space, Box):
-            shp = ob_space.shape
-            frames = np.zeros((self.num_envs, self.k*shp[0], *shp[1:]),
-                              dtype=ob_space.dtype)
-            low = np.repeat(ob_space.low, self.k, axis=0)
-            high = np.repeat(ob_space.high, self.k, axis=0)
-            space = Box(low=low, high=high, dtype=ob_space.dtype)
-            return space, frames
-        else:
-            raise ValueError("Observation Space must be Box or Tuple."
-                             f" Found {type(ob_space)}.")
+        nested_spaces = unpack_space(ob_space)
+
+        def _get_frames(space):
+            if isinstance(space, Box):
+                shp = space.shape
+                return np.zeros((self.num_envs, self.k*shp[0], *shp[1:]),
+                                dtype=space.dtype)
+            else:
+                raise ValueError("Observation Space must contain only Box, "
+                                 f"Dict, or Tuple. Found {type(space)}.")
+
+        def _get_stacked_space(space):
+            return Box(
+                low=np.repeat(space.low, self.k, axis=0),
+                high=np.repeat(space.high, self.k, axis=0),
+                dtype=space.dtype
+            )
+
+        frames = nest.map_structure(_get_frames, nested_spaces)
+        stacked_spaces = nest.map_structure(_get_stacked_space, nested_spaces)
+        return pack_space(stacked_spaces), frames
 
     def _add_new_observation(self, frames, ob):
         shape = ob.shape[1]
