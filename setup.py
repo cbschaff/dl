@@ -18,7 +18,9 @@ setuptools.setup(
       'gym',
       'gym[atari]',
       'gym[box2d]',
-      'pyyaml'
+      'pyyaml',
+      'psutil',
+      'tensorboard'
     ],
     zip_safe=False,
 )

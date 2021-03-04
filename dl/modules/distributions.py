@@ -74,9 +74,11 @@ class TanhNormal(D.Distribution):
         """Mode."""
         return torch.tanh(self.normal.mean)
 
-    def log_prob(self, value, pre_tanh_value=None):
+    def log_prob(self, value):
         """Log prob."""
-        if pre_tanh_value is None:
+        if hasattr(value, 'pre_tanh_value'):
+            pre_tanh_value = value.pre_tanh_value
+        else:
             pre_tanh_value = torch.log(
                 (1+value) / (1-value)
             ) / 2
@@ -85,7 +87,7 @@ class TanhNormal(D.Distribution):
         )
         return logps.sum(-1)
 
-    def sample(self, sample_shape=torch.Size(), return_pretanh_value=False):
+    def sample(self, sample_shape=torch.Size()):
         """Sample.
 
         Gradients will and should *not* pass through this operation.
@@ -93,18 +95,18 @@ class TanhNormal(D.Distribution):
         """
         z = self.normal.sample(sample_shape).detach()
 
-        if return_pretanh_value:
-            return torch.tanh(z), z
-        else:
-            return torch.tanh(z)
+        sample = torch.tanh(z)
+        # hack to keep distribution interface and to return pre-tanh information
+        sample.pre_tanh_value = z
+        return sample
 
     def rsample(self, sample_shape=torch.Size(), return_pretanh_value=False):
         """Sample with reparameterization trick."""
         z = self.normal.rsample(sample_shape)
-        if return_pretanh_value:
-            return torch.tanh(z), z
-        else:
-            return torch.tanh(z)
+        sample = torch.tanh(z)
+        # hack to keep distribution interface and to return pre-tanh information
+        sample.pre_tanh_value = z
+        return sample
 
     def entropy(self):
         """Entropy."""
@@ -508,8 +510,9 @@ if __name__ == '__main__':
             dist, logstd = dg(features, return_logstd=True)
             assert torch.allclose(logstd, torch.zeros([1]))
 
-            ac, pac = dist.sample(return_pretanh_value=True)
-            logp = dist.log_prob(ac, pac)
+            ac = dist.sample()
+            logp = dist.log_prob(ac)
+            del ac.pre_tanh_value
             logp2 = dist.log_prob(ac)
             assert torch.allclose(logp, logp2)
             assert logp.shape == (2,)

@@ -1,1 +1,1 @@
-from dl.examples.sac.base import FeedForwardPolicyBase, FeedForwardVFBase, AppendActionFeedForwardQFBase
+from dl.examples.sac.base import FeedForwardPolicyBase, AppendActionFeedForwardQFBase
