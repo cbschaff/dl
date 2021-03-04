@@ -60,14 +60,12 @@ class ReplayBufferDataManager(object):
         ob = self.buffer.encode_recent_observation()
         with torch.no_grad():
             data = self.act(nest.map_structure(_to_torch, ob))
-            for k in data:
-                data[k] = data[k].cpu().numpy()
+            data = nest.map_structure(lambda x: x.cpu().numpy(), data)
         self._ob, r, done, _ = self.env.step(data['action'])
         data['reward'] = r
         data['done'] = done
         # remove batch dimensions
-        for k in data:
-            data[k] = data[k][0]
+        data = nest.map_structure(_remove_batch_dim, data)
         self.buffer.store_effect(idx, data)
         if done:
             self._ob = self.env.reset()
