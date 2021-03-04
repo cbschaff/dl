@@ -3,7 +3,7 @@
 https://arxiv.org/abs/1801.01290
 """
 from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
-from dl.modules import TanhNormal, ProductDistribution
+from dl.modules import TanhNormal
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -128,7 +128,7 @@ class SAC(Algorithm):
             else:
                 target_entropies = nest.map_structure(
                     lambda space: -np.prod(space.shape).item(),
-                    self.env.action_space
+                    misc.unpack_space(self.env.action_space)
                 )
                 self.target_entropy = sum(nest.flatten(target_entropies))
 
@@ -180,10 +180,9 @@ class SAC(Algorithm):
         # pi loss
         pi_loss = None
         if self.t % self.policy_update_period == 0:
-            with torch.no_grad():
-                q1_pi = self.qf1(batch['obs'], pi_out.action).value
-                q2_pi = self.qf2(batch['obs'], pi_out.action).value
-                min_q_pi = torch.min(q1_pi, q2_pi)
+            q1_pi = self.qf1(batch['obs'], pi_out.action).value
+            q2_pi = self.qf2(batch['obs'], pi_out.action).value
+            min_q_pi = torch.min(q1_pi, q2_pi)
             assert min_q_pi.shape == logp.shape
             pi_loss = (alpha * logp - min_q_pi).mean()
 
@@ -224,6 +223,11 @@ class SAC(Algorithm):
             pi_loss, qf1_loss, qf2_loss = self.loss(batch)
 
             # update
+            if pi_loss:
+                self.opt_pi.zero_grad()
+                pi_loss.backward()
+                self.opt_pi.step()
+
             self.opt_qf1.zero_grad()
             qf1_loss.backward()
             self.opt_qf1.step()
@@ -232,10 +236,6 @@ class SAC(Algorithm):
             qf2_loss.backward()
             self.opt_qf2.step()
 
-            if pi_loss:
-                self.opt_pi.zero_grad()
-                pi_loss.backward()
-                self.opt_pi.step()
         return self.t
 
     def evaluate(self):

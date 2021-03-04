@@ -1,7 +1,7 @@
 # Hyperparameters from Soft Actor Critic: https://arxiv.org/abs/1812.05905
 import dl.examples.sac
 
-train.algorithm = @SAC
+train.algorithm = @SACDiscrete
 train.maxt = 1000000
 train.seed = 0
 train.eval = True
@@ -11,7 +11,7 @@ train.maxseconds = None
 
 SAC.env_fn = @make_env
 SAC.policy_fn = @policy_fn
-SAC.qf_fn = @qf_fn
+SAC.qf_fn = @qf_fn_discrete
 SAC.nenv = 1
 SAC.eval_num_episodes = 20
 SAC.record_num_episodes = 0
@@ -29,7 +29,7 @@ SAC.target_update_period = 1
 SAC.policy_update_period = 1
 SAC.target_smoothing_coef = 0.005
 SAC.alpha = 0.2
-SAC.automatic_entropy_tuning = True
+SAC.automatic_entropy_tuning = False
 SAC.target_entropy = None
 SAC.log_period = 100
 
@@ -37,7 +37,7 @@ Checkpointer.ckpt_period = 10000
 
 optim.Adam.betas = (0.9, 0.999)
 
-make_env.env_id = "LunarLanderContinuous-v2"
+make_env.env_id = "LunarLander-v2"
 make_env.norm_observations = True
 make_env.norm_actions = True
 
