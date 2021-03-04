@@ -73,10 +73,11 @@ class ReplayBuffer(object):
             if k not in step_data:
                 raise ValueError("action, reward, and done must be keys in the"
                                  "dict passed to buffer.store_effect.")
-        for k in step_data.keys():
-            data_k = np.asarray(step_data[k])
-            self.data[k] = np.empty([self.size] + list(data_k.shape),
-                                    dtype=np.float32)
+
+        def _make_buffer(x):
+            x = np.asarray(x)
+            return np.empty([self.size] + list(x.shape), dtype=np.float32)
+        self.data = nest.map_structure(_make_buffer, step_data)
 
     def can_sample(self, batch_size):
         """Check if a batch_size can be sampled.
@@ -206,12 +207,14 @@ class ReplayBuffer(object):
         """
         if self.data == {}:
             self._init_replay_data(step_data)
-        if set(self.data.keys()) != set(step_data.keys()):
-            print(self.data.keys(), step_data.keys())
+        if not nest.has_same_structure(self.data, step_data):
             raise ValueError("The data passed to ReplayBuffer must the same"
                              " at all time steps.")
-        for k, v in step_data.items():
-            self.data[k][idx] = v
+
+        def _insert(item):
+            buffer, x = item
+            buffer[idx] = x
+        nest.map_structure(_insert, nest.zip_structure(self.data, step_data))
 
     def env_reset(self):
         """Update buffer based on early environment resest.
