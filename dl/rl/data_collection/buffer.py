@@ -88,15 +88,13 @@ class ReplayBuffer(object):
         return batch_size + 1 <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
-        batch = {}
+        batch = nest.map_structure(lambda x: x[idxes], self.data)
 
         def _batch(obs):
             return np.concatenate([ob[np.newaxis, :] for ob in obs], 0)
 
         obs = [self._encode_observation(idx) for idx in idxes]
         batch['obs'] = nest.map_structure(_batch, nest.zip_structure(*obs))
-        for k in self.data.keys():
-            batch[k] = self.data[k][idxes]
         next_obs = [self._encode_observation(idx + 1) for idx in idxes]
         batch['next_obs'] = nest.map_structure(_batch,
                                                nest.zip_structure(*next_obs))
