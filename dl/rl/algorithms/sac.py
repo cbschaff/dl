@@ -132,8 +132,10 @@ class SAC(Algorithm):
                 )
                 self.target_entropy = sum(nest.flatten(target_entropies))
 
-            self.log_alpha = torch.zeros(1, requires_grad=True,
-                                         device=self.device)
+            self.log_alpha = torch.tensor(np.log([self.alpha]),
+                                          requires_grad=True,
+                                          device=self.device,
+                                          dtype=torch.float32)
             self.opt_alpha = optimizer([self.log_alpha], lr=policy_lr)
         else:
             self.target_entropy = None
