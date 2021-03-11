@@ -65,6 +65,8 @@ class VecObsNormWrapper(VecEnvWrapper):
             ob, mean, std = item
             if mean is not None:
                 return (ob - mean) / std
+            else:
+                return ob
         return nest.map_structure(norm, nest.zip_structure(obs, self.mean,
                                                            self.std))
 
