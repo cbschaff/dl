@@ -66,21 +66,23 @@ class SACDiscrete(SAC):
 
         if self.t % self.log_period < self.update_period:
             if self.automatic_entropy_tuning:
-                logger.add_scalar('ent/log_alpha',
+                logger.add_scalar('alg/log_alpha',
                                   self.log_alpha.detach().cpu().numpy(), self.t,
                                   time.time())
                 scalars = {
                     "target": self.target_entropy,
                     "entropy": dist.entropy().mean().detach().cpu().numpy().item()
                 }
-                logger.add_scalars('ent/entropy', scalars, self.t, time.time())
+                logger.add_scalars('alg/entropy', scalars, self.t, time.time())
             else:
                 logger.add_scalar(
-                        'ent/entropy',
+                        'alg/entropy',
                         dist.entropy().mean().detach().cpu().numpy().item(),
                         self.t, time.time())
             logger.add_scalar('loss/qf1', qf1_loss, self.t, time.time())
             logger.add_scalar('loss/qf2', qf2_loss, self.t, time.time())
+            logger.add_scalar('alg/qf1', q1.mean().detach().cpu().numpy(), self.t, time.time())
+            logger.add_scalar('alg/qf2', q2.mean().detach().cpu().numpy(), self.t, time.time())
         return pi_loss, qf1_loss, qf2_loss
 
 
