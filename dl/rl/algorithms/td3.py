@@ -7,7 +7,7 @@ This algorithm improves on DDPG by adding:
 - Noise to target policy to avoid propagating unrealistic value estimates
 - Delay policy updates to have better value estimates
 """
-from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
+from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer, BatchedReplayBuffer
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -139,7 +139,9 @@ class TD3(Algorithm):
 
         self._actor = TD3Actor(self.pi, self.env.action_space,
                                exploration_noise)
-        self.buffer = ReplayBuffer(buffer_size, frame_stack)
+        self.buffer = BatchedReplayBuffer(*[
+            ReplayBuffer(buffer_size, frame_stack) for _ in range(self.nenv)
+        ])
         self.data_manager = ReplayBufferDataManager(self.buffer,
                                                     self.env,
                                                     self._actor,

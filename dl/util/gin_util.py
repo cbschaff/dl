@@ -49,12 +49,18 @@ for f in funcs:
 transforms = [obj for name, obj in inspect.getmembers(torchvision.transforms)
               if inspect.isclass(obj)]
 for t in transforms:
-    gin.config.external_configurable(t, module='transforms')
+    try:
+        gin.config.external_configurable(t, module='transforms')
+    except Exception:
+        pass
 
 datasets = [obj for name, obj in inspect.getmembers(torchvision.datasets)
             if inspect.isclass(obj)]
 for d in datasets:
-    gin.config.external_configurable(d, module='datasets')
+    try:
+        gin.config.external_configurable(d, module='datasets')
+    except Exception:
+        pass
 
 
 def load_config(gin_files, gin_bindings=[]):

@@ -1,5 +1,5 @@
 """Collect data from an environment and store it in a replay buffer."""
-from dl.rl.data_collection import ReplayBuffer
+from dl.rl.data_collection import ReplayBuffer, BatchedReplayBuffer
 from dl.rl.util import ensure_vec_env
 from dl import nest
 import torch
@@ -29,9 +29,15 @@ class ReplayBufferDataManager(object):
                  update_period=1):
         """Init."""
         self.env = ensure_vec_env(env)
-        if self.env.num_envs > 1:
-            raise ValueError("ReplayBufferDataManager is only compatible with"
-                             "num_envs = 1.")
+        if self.env.num_envs > 1 and not isinstance(buffer, BatchedReplayBuffer):
+            raise ValueError("when num_envs > 1, you must pass a BatchedReplayBuffer"
+                             " to the ReplayBufferDataManager.")
+        if not isinstance(buffer, BatchedReplayBuffer):
+            buffer = BatchedReplayBuffer(buffer)
+        if self.env.num_envs != buffer.n:
+            raise ValueError(f"Found {self.env.num_envs} envs and {buffer.n} "
+                             "buffers. The number of envs must be equal to the "
+                             "number of buffers!")
         self.act = act_fn
         self.buffer = buffer
         self.device = device
@@ -49,14 +55,10 @@ class ReplayBufferDataManager(object):
         if self._ob is None:
             self.manual_reset()
 
-        def _remove_batch_dim(ob):
-            return ob[0]
-
         def _to_torch(ob):
-            return torch.from_numpy(ob).to(self.device)[None]
+            return torch.from_numpy(ob).to(self.device)
 
-        idx = self.buffer.store_observation(
-                        nest.map_structure(_remove_batch_dim, self._ob))
+        idx = self.buffer.store_observation(self._ob)
         ob = self.buffer.encode_recent_observation()
         with torch.no_grad():
             data = self.act(nest.map_structure(_to_torch, ob))
@@ -64,22 +66,20 @@ class ReplayBufferDataManager(object):
         self._ob, r, done, _ = self.env.step(data['action'])
         data['reward'] = r
         data['done'] = done
-        # remove batch dimensions
-        data = nest.map_structure(_remove_batch_dim, data)
         self.buffer.store_effect(idx, data)
-        if done:
-            self._ob = self.env.reset()
+        if np.any(done):
+            self._ob = self.env.reset(force=False)
 
     def step_until_update(self):
         """Step env untiil update."""
         t = 0
         for _ in range(self.update_period):
             self.env_step_and_store_transition()
-            t += 1
+            t += self.env.num_envs
         while self.buffer.num_in_buffer < min(self.learning_starts,
                                               self.buffer.size):
             self.env_step_and_store_transition()
-            t += 1
+            t += self.env.num_envs
         return t
 
     def sample(self, *args, **kwargs):

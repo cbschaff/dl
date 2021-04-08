@@ -2,7 +2,7 @@
 
 https://www.nature.com/articles/nature14236
 """
-from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
+from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer, BatchedReplayBuffer
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -17,18 +17,20 @@ from dl.rl.envs import VecFrameStack, VecEpsilonGreedy, VecEpisodeLogger
 class EpsilonGreedyActor(object):
     """Epsilon Greedy actor."""
 
-    def __init__(self, qf, epsilon_schedule, action_space):
+    def __init__(self, qf, epsilon_schedule, action_space, nenv):
         """Init."""
         self.qf = qf
         self.eps = epsilon_schedule
         self.action_space = action_space
+        self.nenv = nenv
         self.t = 0
 
     def __call__(self, obs):
         """Epsilon greedy action."""
         if self.eps.value(self.t) > np.random.rand():
             action = torch.from_numpy(
-                np.array(self.action_space.sample()))[None]
+                np.array([self.action_space.sample() for _ in range(self.nenv)])
+            )
         else:
             action = self.qf(obs).action
         self.t += 1
@@ -101,9 +103,11 @@ class DQN(Algorithm):
         self.eps_schedule = LinearSchedule(exploration_timesteps, final_eps,
                                            1.0)
         self._actor = EpsilonGreedyActor(self.qf, self.eps_schedule,
-                                         self.env.action_space)
+                                         self.env.action_space, self.nenv)
 
-        self.buffer = ReplayBuffer(self.buffer_size, self.frame_stack)
+        self.buffer = BatchedReplayBuffer(*[
+            ReplayBuffer(buffer_size, frame_stack) for _ in range(self.nenv)
+        ])
         self.data_manager = ReplayBufferDataManager(self.buffer,
                                                     self.env,
                                                     self._actor,

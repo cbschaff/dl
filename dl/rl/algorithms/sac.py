@@ -2,7 +2,7 @@
 
 https://arxiv.org/abs/1801.01290
 """
-from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
+from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer, BatchedReplayBuffer
 from dl.modules import TanhNormal
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
@@ -112,7 +112,9 @@ class SAC(Algorithm):
         self.target_qf1.load_state_dict(self.qf1.state_dict())
         self.target_qf2.load_state_dict(self.qf2.state_dict())
 
-        self.buffer = ReplayBuffer(buffer_size, frame_stack)
+        self.buffer = BatchedReplayBuffer(*[
+            ReplayBuffer(buffer_size, frame_stack) for _ in range(self.nenv)
+        ])
         self.data_manager = ReplayBufferDataManager(self.buffer,
                                                     self.env,
                                                     SACActor(self.pi),

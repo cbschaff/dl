@@ -2,7 +2,7 @@
 
 https://arxiv.org/abs/1509.02971
 """
-from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer
+from dl.rl.data_collection import ReplayBufferDataManager, ReplayBuffer, BatchedReplayBuffer
 from dl import logger, nest, Algorithm, Checkpointer
 import gin
 import os
@@ -165,7 +165,9 @@ class DDPG(Algorithm):
                                              noise_sigma_final, noise_sigma)
         self._actor = DDPGActor(self.pi, self.env.action_space, noise_theta,
                                 self.noise_schedule.value(self.t))
-        self.buffer = ReplayBuffer(buffer_size, frame_stack)
+        self.buffer = BatchedReplayBuffer(*[
+            ReplayBuffer(buffer_size, frame_stack) for _ in range(self.nenv)
+        ])
         self.data_manager = ReplayBufferDataManager(self.buffer,
                                                     self.env,
                                                     self._actor,
@@ -217,13 +219,14 @@ class DDPG(Algorithm):
             pi_loss, qf_loss = self.loss(batch)
 
             # update
+            self.opt_pi.zero_grad()
+            pi_loss.backward()
+            self.opt_pi.step()
+
             self.opt_qf.zero_grad()
             qf_loss.backward()
             self.opt_qf.step()
 
-            self.opt_pi.zero_grad()
-            pi_loss.backward()
-            self.opt_pi.step()
         return self.t
 
     def evaluate(self):
