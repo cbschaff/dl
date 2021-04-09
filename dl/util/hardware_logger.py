@@ -34,11 +34,14 @@ def getGPUs():
     for g in range(numDevices):
         line = lines[g]
         vals = line.split(', ')
-        id = int(vals[0])
-        util = _cast_float(vals[1])
-        mem_total = _cast_float(vals[2])
-        mem_used = _cast_float(vals[3])
-        gpus.append(_GPU(id=id, util=util, memutil=100 * mem_used/mem_total))
+        try:
+            id = int(vals[0])
+            util = _cast_float(vals[1])
+            mem_total = _cast_float(vals[2])
+            mem_used = _cast_float(vals[3])
+            gpus.append(_GPU(id=id, util=util, memutil=100 * mem_used/mem_total))
+        except Exception:
+            pass
     return gpus
 
 
