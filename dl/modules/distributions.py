@@ -245,7 +245,7 @@ class Categorical(nn.Module):
         super().__init__()
 
         self.linear = nn.Linear(nin, nout)
-        nn.init.orthogonal_(self.linear.weight.data, gain=0.01)
+        nn.init.orthogonal_(self.linear.weight.data, gain=0.0)
         nn.init.constant_(self.linear.bias.data, 0)
 
     def forward(self, x):
@@ -275,7 +275,7 @@ class Delta(nn.Module):
         super().__init__()
 
         self.linear = nn.Linear(nin, nout)
-        nn.init.orthogonal_(self.linear.weight.data, gain=0.01)
+        nn.init.orthogonal_(self.linear.weight.data, gain=0.0)
         nn.init.constant_(self.linear.bias.data, 0)
 
     def forward(self, x):
@@ -331,13 +331,13 @@ class DiagGaussian(nn.Module):
         self.log_std_max = log_std_max
 
         self.fc_mean = nn.Linear(nin, nout)
-        nn.init.orthogonal_(self.fc_mean.weight.data, gain=1.0)
+        nn.init.orthogonal_(self.fc_mean.weight.data, gain=0.0)
         nn.init.constant_(self.fc_mean.bias.data, 0)
         if constant_log_std:
             self.logstd = nn.Parameter(torch.zeros(nout))
         else:
             self.fc_logstd = nn.Linear(nin, nout)
-            nn.init.orthogonal_(self.fc_logstd.weight.data, gain=0.01)
+            nn.init.orthogonal_(self.fc_logstd.weight.data, gain=0.0)
             nn.init.constant_(self.fc_logstd.bias.data, 0)
 
     def forward(self, x, return_logstd=False):
